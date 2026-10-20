@@ -21,6 +21,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { ForecastCurve } from '@/components/charts';
+import { PrerequisitePanel } from '@/components/PrerequisitePanel';
 
 const DIFFICULTY_OPTIONS = [1, 2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} — ${['very easy', 'easy', 'medium', 'hard', 'very hard'][n - 1]}` }));
 
@@ -256,6 +257,8 @@ export default function ConceptDetailPage() {
           ) : (
             concept.sourceReference
           )}
+
+      {concept.sourceId && <PrerequisitePanel conceptId={concept.id} />}
         </p>
       )}
 

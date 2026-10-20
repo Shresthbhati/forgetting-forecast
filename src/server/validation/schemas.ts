@@ -143,6 +143,21 @@ export const quizParamsSchema = z.object({
   seed: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
 });
 
+export const mixedTestParamsSchema = z.object({
+  size: z.coerce.number().int().min(3).max(25).default(10),
+  /** Comma-separated subject names; omitted means every subject. */
+  subjects: z.string().max(1000).optional().transform(v => (v ? v.split(',').map(x => x.trim()).filter(Boolean) : [])),
+  seed: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+});
+
+export const createExamSchema = z.object({
+  subject: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(200),
+  examDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine(v => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)), 'Not a real date'),
+});
+
+export const examIdParamSchema = z.object({ id: uuidSchema });
+
 // Type inference helpers
 export type PaginationParams = z.infer<typeof paginationSchema>;
 export type CreateConceptInput = z.infer<typeof createConceptSchema>;
@@ -154,6 +169,7 @@ export type ForecastParams = z.infer<typeof forecastParamsSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type SessionIdParam = z.infer<typeof sessionIdParamSchema>;
 export type AnalyticsParams = z.infer<typeof analyticsParamsSchema>;
+export type CreateExamInput = z.infer<typeof createExamSchema>;
 export type CreateConceptsFromSourceInput = z.infer<typeof createConceptsFromSourceSchema>;
 
 // Generic API response helpers

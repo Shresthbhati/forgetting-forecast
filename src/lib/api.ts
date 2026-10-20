@@ -8,6 +8,10 @@ import type { SubjectRollup } from '@/domain/forecasting/rollup';
 import type {
   ConceptDetail,
   CreatedFromSource,
+  Exam,
+  ExamPlanResponse,
+  MixedTestResponse,
+  PrerequisitesResponse,
   QuizResponse,
   SourceMastery,
   Source,
@@ -93,6 +97,7 @@ export const api = {
     }) => apiRequest<any>('/api/concepts', { method: 'POST', body: JSON.stringify(input) }),
     get: (id: string) => apiRequest<any>(`/api/concepts/${id}`),
     detail: (id: string) => apiRequest<ConceptDetail>(`/api/concepts/${id}/detail`),
+    prerequisites: (id: string) => apiRequest<PrerequisitesResponse>(`/api/concepts/${id}/prerequisites`),
     update: (id: string, input: Partial<any>) => apiRequest<any>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
     delete: (id: string) => apiRequest<void>(`/api/concepts/${id}`, { method: 'DELETE' }),
   },
@@ -205,6 +210,24 @@ export const api = {
         };
         xhr.send(body);
       }),
+  },
+
+  // Exams and revision plans
+  exams: {
+    list: () => apiRequest<{ exams: Exam[] }>('/api/exams'),
+    create: (input: { subject: string; name: string; examDate: string }) =>
+      apiRequest<Exam>('/api/exams', { method: 'POST', body: JSON.stringify(input) }),
+    delete: (id: string) => apiRequest<void>(`/api/exams/${id}`, { method: 'DELETE' }),
+    plan: (id: string) => apiRequest<ExamPlanResponse>(`/api/exams/${id}/plan`),
+  },
+
+  // Mixed test across subjects
+  mixedTest: (params?: { size?: number; subjects?: string[]; seed?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.size) search.set('size', String(params.size));
+    if (params?.subjects?.length) search.set('subjects', params.subjects.join(','));
+    if (params?.seed !== undefined) search.set('seed', String(params.seed));
+    return apiRequest<MixedTestResponse>(`/api/mixed-test?${search}`);
   },
 
   // Predicted recall rolled up to topics and subjects

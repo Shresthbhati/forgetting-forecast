@@ -6,6 +6,9 @@
 
 import type { SourceKind, SourceLocation } from '../domain/ingestion/types.ts';
 import type { Question } from '../domain/assessment/types.ts';
+import type { MixedItem } from '../domain/assessment/mixed.ts';
+import type { PrerequisiteRow } from '../domain/knowledge/graph.ts';
+import type { RevisionPlan } from '../domain/knowledge/exam.ts';
 import type { TopicMastery } from '../domain/assessment/mastery.ts';
 import type { FeatureModelEvaluation } from '../domain/forecasting/featureModel.ts';
 
@@ -487,4 +490,51 @@ export interface QuizResponse {
 
 export interface SourceMastery {
   topics: TopicMastery[];
+}
+
+// ---- Mixed tests (phase 4) ----
+
+export interface MixedTestResponse {
+  /** Interleaved across subjects, weighted towards concepts predicted to fade. Each item is labelled by origin. */
+  questions: MixedItem[];
+  seed: number;
+  targetRecall: number;
+  /** Subjects the test can draw from, with their concept counts (for the filter). */
+  subjectsAvailable: Array<{ subject: string; concepts: number }>;
+  conceptsConsidered: number;
+}
+
+// ---- Knowledge graph (phase 5) ----
+
+export interface PrerequisitesResponse {
+  /** False for concepts that were not made from a source term (typed by hand, or a passage): there is no graph to read. */
+  available: boolean;
+  unavailableReason?: string;
+  focus?: { conceptId: UUID; term: string };
+  /** The concept itself is below target or has lapsed: the "Struggling with B -> check A" case. */
+  struggling?: boolean;
+  /** Terms named in this concept's definition and defined no later in the source, weakest / untracked first. */
+  prerequisites?: PrerequisiteRow[];
+  /** How many other terms' definitions name this one. */
+  dependents?: number;
+  /** One generated probe per tracked prerequisite that needs a check (answers are recorded against that prerequisite). */
+  questions?: Question[];
+}
+
+// ---- Exam mode (phase 5) ----
+
+export interface Exam {
+  id: UUID;
+  subject: string;
+  name: string;
+  /** Calendar day, YYYY-MM-DD. */
+  examDate: string;
+  createdAt: Timestamp;
+  /** Whole days from today (UTC) to the exam; negative once it has passed. */
+  daysLeft: number;
+}
+
+export interface ExamPlanResponse {
+  exam: Exam;
+  plan: RevisionPlan;
 }

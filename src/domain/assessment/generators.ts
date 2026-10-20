@@ -3,12 +3,11 @@ import { splitDefinition } from '../ingestion/terms.ts';
 import { BLANK, contentWords, dedupeQuestions, passesBodyGate, passesStemGate } from './gates.ts';
 import { evaluate, findFormulas, type Formula } from './formula.ts';
 import { hashString, makeRng, randomInt, shuffle, type Rng } from './random.ts';
-import type { FormulaInput, GeneratorInput, PoolEntry, Question, QuestionGenerator, QuestionType, TermInput } from './types.ts';
+import type { FormulaInput, GeneratorInput, PoolEntry, Question, QuestionGenerator, QuestionType, TermInput, TermQuestionType } from './types.ts';
 
 export { findFormulas };
 
-type TermType = Exclude<QuestionType, 'numerical'>;
-const ALL_TERM_TYPES: TermType[] = ['definition', 'cloze', 'mcq', 'truefalse'];
+export const ALL_TERM_TYPES: TermQuestionType[] = ['definition', 'cloze', 'mcq', 'truefalse'];
 const DISTRACTORS = 3;
 
 const capitalise = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);

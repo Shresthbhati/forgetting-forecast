@@ -5,7 +5,10 @@
 
 import type { SourceLocation } from '../ingestion/types.ts';
 
-export type QuestionType = 'definition' | 'cloze' | 'mcq' | 'truefalse' | 'numerical';
+/** Types the generator makes from a defined term. */
+export type TermQuestionType = 'definition' | 'cloze' | 'mcq' | 'truefalse';
+/** `recall` is a concept the user wrote themselves: its prompt and answer, graded like a short answer. */
+export type QuestionType = TermQuestionType | 'numerical' | 'recall';
 
 /** How a response is checked: exact option match, text similarity, or a number within a tolerance. */
 export type GradingKind = 'exact' | 'short' | 'numeric';
@@ -64,7 +67,7 @@ export interface GeneratorInput {
   formulas: FormulaInput[];
   seed: number;
   /** Types to rotate through for terms (numericals come from `formulas`). Default: all four term types. */
-  types?: Array<Exclude<QuestionType, 'numerical'>>;
+  types?: TermQuestionType[];
   /** Cap on numerical questions. Default 2. */
   maxNumerical?: number;
 }
