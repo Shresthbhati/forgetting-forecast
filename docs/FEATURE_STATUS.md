@@ -8,7 +8,7 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 | Area | Status | Notes |
 |---|---|---|
-| Schema + RLS (10 tables) | ✅ | `supabase/migrations/001`–`007`; `npm run test:rls` asserts isolation (37 checks + the sources checks added with 007) |
+| Schema + RLS (12 tables) | ✅ | `supabase/migrations/001`–`009`; `npm run test:rls` asserts isolation (extended for sources, exams and source groups). **Not run in the build environment** (no service-role key and no outbound access to Supabase); 008/009 were applied to the project and their policies spot-checked in SQL |
 | Cross-user RPC leak | ✅ fixed | `002`: `SECURITY INVOKER`, `auth.uid()`, `anon` revoked; the old `p_user_id` signatures no longer exist |
 | Open redirect in `/auth/callback` | ✅ fixed | `src/lib/safeNextPath.ts` + unit tests |
 | Session refresh + signed-out redirect | ✅ | `src/middleware.ts` |
@@ -31,6 +31,13 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | Section quiz + attempts | ✅ | `GET /api/sources/:id/quiz`; answers go through `submit_review_tx` with question type in metadata; numericals are practice-only |
 | Per-topic mastery | ✅ | `GET /api/sources/:id/mastery`; recency-weighted; `null` below 5 answers |
 | Source storage isolation | ✅ | private bucket, `{user_id}/` folders; export includes sources, deletion removes files |
+| Target recall in scheduling (phase 3) | ✅ | `target_recall` setting drives next-review time and status; unit-tested (`targetRecall.test.ts`) |
+| Topic / subject roll-up | ✅ | `GET /api/rollup`, dashboard Memory map; checked at 375px and desktop |
+| Feature-adjusted challenger | 🟡 | question type + topic ratios, walk-forward vs v1 and baselines; **evaluation only**, not used for scheduling; needs ≥ 30 scored attempts to be called better |
+| Mixed tests (phase 4) | 🟡 | `GET /api/mixed-test`, `/test`; weighted sampling + interleaving unit-tested; variety is limited by the definitions in the sources |
+| Prerequisite graph + check (phase 5) | 🟡 | name matching in definitions; `GET /api/concepts/:id/prerequisites`, `/concepts/[id]/check`; the panel on the concept page was not browser-checked |
+| Exam mode (phase 5) | ✅ | `exams` table + RLS, `/api/exams`, `/exams`, plan unit-tested; checked at 375px and desktop |
+| YouTube sources (phase 6) | 🟡 | captions only, playlists as groups; parsing and fetching tested against fixtures and a mocked `fetch`; **never run against the real YouTube** and it depends on an undocumented page structure |
 | Write rate limit | 🟡 | in-memory per instance (60/min/user/scope); move to Redis/Upstash for multi-instance |
 | Scheduler uses `target_recall` | ⬜ | stored on the profile; the engine plans around a fixed 80% |
 | Reads paginated past 1,000 rows | 🟡 | PostgREST caps responses at 1,000 rows; analytics and the stats query note this limit |
@@ -60,7 +67,8 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 - The half-life model is heuristic and unvalidated. On the shipped demo seed it **does not** beat the "your past accuracy" baseline; the Analytics page reports that.
 - Demo data is simulated; its calibration shows the pipeline works, not that the model predicts real people.
-- Not built: FSRS, offline mode, OCR, YouTube, phases 3–6 of `docs/VISION_PLAN.md` (memory-engine upgrades, mixed tests, knowledge graph, YouTube), e2e browser tests in CI, Lighthouse CI.
+- Not built: FSRS, offline mode, OCR, speech-to-text for videos without captions, e2e browser tests in CI, Lighthouse CI. All six phases of `docs/VISION_PLAN.md` are built; see its limits sections.
+- The live scripts (`npm run test:api`, `npm run test:rls`) were extended for phases 2–6 but could not be run in the build environment; browser checks used a mocked API.
 
 ## Contrast (computed WCAG ratios on `night` / `panel` / `panel-hi`)
 

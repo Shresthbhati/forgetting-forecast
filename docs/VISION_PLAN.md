@@ -32,10 +32,10 @@ The new direction changes the starting point: users **upload what they study**. 
 |---|---|---|
 | 1 | Foundation: uploads, extraction, outline, key terms, concepts linked to their page/slide | **built** (see below) |
 | 2 | Assessment engine (our own) | **built** (see below) |
-| 3 | Memory engine upgrades | not started |
-| 4 | Mixed tests across subjects | not started |
-| 5 | Knowledge graph and exam mode | not started |
-| 6 | YouTube (captions only) | not started |
+| 3 | Memory engine upgrades | **built** (see below) |
+| 4 | Mixed tests across subjects | **built** (see below) |
+| 5 | Knowledge graph and exam mode | **built** (see below) |
+| 6 | YouTube (captions only) | **built** (see below) |
 
 ### 1. Foundation (built)
 
@@ -78,7 +78,7 @@ The new direction changes the starting point: users **upload what they study**. 
 - "Struggling with B → check A" probe questions.
 - An exam date plus syllabus coverage produces a revision plan.
 
-### 6. YouTube (later)
+### 6. YouTube (captions only)
 
 - Captions only, as another source type, with timestamps as locations.
 - A clear "no transcript available" failure.
@@ -156,6 +156,48 @@ No schema change: quiz answers are ordinary attempts written through the existin
 - Grading is a heuristic. It will mark some right answers wrong and a few wrong ones right, which is why the override step is always shown.
 - Question type is stored in attempt metadata but is **not** a model feature yet (phase 3).
 - Rules still can't write "explain why" or application questions.
+
+## Phase 3 in detail: memory engine
+
+Migrations: none.
+
+- **Target recall is wired in.** `target_recall` (Settings, 0.5–0.99) now drives the scheduler: a concept's next review time and its Strong / Review soon / Due now status are planned around the user's target instead of a fixed 0.8. The default is still 0.8 for users who never changed it (`DEFAULT_TARGET_RECALL`). The model's *predictions* are unchanged; only the planning threshold moves.
+- **Roll-up** (`domain/forecasting/rollup.ts`, `GET /api/rollup`): mean predicted recall, concepts below target, reviewed count and lapses per topic and per subject, plus the weakest concept. Shown as the **Memory map** on the dashboard. Concepts never reviewed sit on the model's starting estimate, and the panel says so.
+- **Feature challenger** (`domain/forecasting/featureModel.ts`, `feature-adjusted-v2`): adds question type and topic as features by learning a shrunken calibration ratio per feature value from *earlier* attempts only (walk-forward). It is evaluated on the same attempts as v1 and the two baselines (Model Lab and Analytics) and is **evaluation only**: scheduling still uses `exponential-half-life-v1`. It may only be called better than v1 after 30 scored attempts and a lower Brier score.
+
+## Phase 4 in detail: mixed tests
+
+Migrations: none. Answers are ordinary attempts through `POST /api/reviews` (`reviewMode: 'practice'`, metadata `source: 'mixed-test'`).
+
+- `domain/assessment/mixed.ts`: concepts are sampled **without replacement, weighted by (1 − predicted recall) × (1 + 0.3 × lapses, capped at 6 lapses) + a small floor** (Efraimidis–Spirakis), then **interleaved by subject** (never more than two in a row from one subject while others remain).
+- For a concept made from a source term, the question is a *generated* item (cloze, multiple choice, true/false) and avoids the types asked most recently, so the same concept doesn't repeat the same wording. Hand-written concepts, and any concept the generators can't handle, get the usual recall question. Every item is labelled by origin.
+- `GET /api/mixed-test?size=&subjects=&seed=` and `/test`: size (5–20), subject filter, "Draw a different set", then the same quiz runner as phase 2 including the grading-override step.
+
+## Phase 5 in detail: knowledge graph and exam mode
+
+Migration `008_exams.sql`: an `exams` table (user, subject, name, `exam_date`) with four RLS policies.
+
+- **Prerequisites** (`domain/knowledge/graph.ts`, `GET /api/concepts/[id]/prerequisites`): term A is a prerequisite of term B when A's name appears in B's definition **and** A is defined in the same or an earlier section of the same source (names that mention each other within a section are ambiguous, so neither edge is kept; plural forms match). Only defined terms take part.
+- **"Struggling with B → check A"**: if B is below target or has lapsed, the concept page lists its prerequisites that are untracked, never reviewed, below target or lapsed, and offers `/concepts/[id]/check`, a quiz with one generated probe per tracked prerequisite. Answers are recorded against the prerequisite.
+- **Exam mode** (`domain/knowledge/exam.ts`, `/exams`): the syllabus is the *sections of the user's sources for the subject*. A topic is covered once a concept exists for it. The plan spreads "learn" tasks for uncovered topics over the first 60% of the days, gives each covered topic 1–3 review sessions (more when predicted recall on exam day is low, plus one a couple of days after it is learned) and ends with a mock test on the last day. Days heavier than 1.5 × the daily goal are flagged; too many uncovered topics for the days left produces a warning. Dates are plain UTC calendar days.
+
+## Phase 6 in detail: YouTube (captions only)
+
+Migration `009_youtube_sources.sql`: `source_groups` (RLS), `sources.source_url`, `sources.group_id`, `kind` widened to include `youtube`, and the `sources` insert/update policies now also require a group to belong to the same user.
+
+- **No audio or video is downloaded and nothing is transcribed.** `server/ingestion/youtube.ts` fetches the watch page, reads the embedded player response, picks a caption track (human-made in English, then automatic, then any), fetches it as `json3` (falling back to XML) and the domain layer (`domain/ingestion/youtube.ts`) turns the cues into one-minute units. Sections are consecutive time windows of about 1,500 characters headed by their range ("2:10–4:30") and located by seconds, so concepts say "From: title, 2:10–4:30".
+- **Clear failures**: "No transcript available for this video", sign-in required, removed, live stream with no recording, longer than 6 hours, YouTube unreachable or answering with an error. The source is kept as `failed` with that message, and importing the same link again retries it.
+- **Safety**: only https `*.youtube.com` caption URLs are ever fetched (SSRF guard); 15 s timeouts; 4 MB page and 3 MB caption caps; the video id is validated before use.
+- **Playlists are groups**: a playlist link creates a `source_groups` row and imports up to 25 of its videos one after another, each succeeding or failing on its own. Importing a video twice returns the existing source (idempotent on a hash of `youtube:<id>`).
+- `POST /api/sources/youtube { url, subject }`; `/sources` has an "Add a YouTube link" card; the source page has "Open on YouTube" and "Watch from m:ss" links per section.
+
+### Limits of phases 3–6
+
+- The feature challenger is not used for scheduling. With little data its ratios stay near 1 and it will not beat v1; that is the intended behaviour.
+- The graph is name matching, not understanding: a term that is merely *mentioned* in a definition becomes a prerequisite, and a prerequisite expressed with a synonym is missed. The panel says "check they make sense".
+- Exam syllabus quality depends on the section outline; "predicted recall on exam day" assumes no further review.
+- **YouTube reads an undocumented page structure, so it can stop working whenever YouTube changes it** (or starts requiring extra tokens for some videos). It could not be run against the real site in the build environment, only against fixtures and a mocked `fetch`. Automatic captions have no punctuation and mishear words, so sentence-based definition detection is rougher than on documents; the UI says so.
+- Rules still can't write "explain why" or application questions; mixed tests are only as varied as the definitions in the sources.
 
 ## Known limits of phase 1
 
