@@ -6,6 +6,7 @@
 import { createSupabaseServerClient } from '@/server/db/supabase';
 import { getConcept } from '@/server/repositories/concepts';
 import { getOrCreateRecallState } from '@/server/repositories/recallStates';
+import { getTargetRecall } from '@/server/repositories/profile';
 import { submitReviewTx, listAttempts, getAttemptsBySession } from '@/server/repositories/retrievalAttempts';
 import { createSession, completeSession, abandonSession, getSession, type StudySession } from '@/server/repositories/studySessions';
 import { getPendingForecasts, insertEvaluations, insertForecasts } from '@/server/repositories/forecasts';
@@ -25,6 +26,7 @@ import type {
   Review,
   ReviewHistoryPage,
   ReviewMode,
+  Probability,
   RetrievalAttemptInput,
   SessionSummary,
   Timestamp,
@@ -74,6 +76,7 @@ export async function submitReview(input: SubmitReviewInput): Promise<SubmitRevi
 
   // 3. Current state (created on first review)
   const recallState = await getOrCreateRecallState(concept.id, 24, MODEL_VERSION);
+  const targetRecall = await getTargetRecall();
   const now = new Date();
   const elapsedSincePreviousReviewHours = recallState.lastReviewedAt
     ? (now.getTime() - new Date(recallState.lastReviewedAt).getTime()) / 3_600_000
@@ -100,7 +103,7 @@ export async function submitReview(input: SubmitReviewInput): Promise<SubmitRevi
   };
 
   // 5. New state from the pure domain engine (timestamps are server-set; the client never supplies them).
-  const domainResult = updateRecallStateDomain({ concept, recallState, attempt: attemptInput, now });
+  const domainResult = updateRecallStateDomain({ concept, recallState, attempt: attemptInput, now, targetRecall });
   const next = domainResult.recallState;
 
   // 6. ONE atomic write: attempt + recall state in a single transaction, idempotent on clientRequestId.
@@ -136,13 +139,13 @@ export async function submitReview(input: SubmitReviewInput): Promise<SubmitRevi
   // 7. Forecast log (best effort: a logging failure must never lose a committed review).
   if (!tx.duplicate) {
     try {
-      await logAndEvaluateForecasts(concept, tx.attempt, tx.recallState, now);
+      await logAndEvaluateForecasts(concept, tx.attempt, tx.recallState, now, targetRecall);
     } catch (error) {
       console.error('[reviews] forecast logging failed:', error instanceof Error ? error.message : 'unknown error');
     }
   }
 
-  const forecast = generateForecast({ concept, recallState: tx.recallState, at: now });
+  const forecast = generateForecast({ concept, recallState: tx.recallState, at: now, targetRecall });
   return {
     attempt: tx.attempt,
     concept,
@@ -157,7 +160,7 @@ export async function submitReview(input: SubmitReviewInput): Promise<SubmitRevi
  * Evaluates this concept's earlier forecasts against the new attempt (window rule: see
  * domain/forecasting/evaluation.ts), then logs fresh 1d/7d/30d forecasts from the updated state.
  */
-async function logAndEvaluateForecasts(concept: Concept, attempt: Review, state: RecallState, now: Date): Promise<void> {
+async function logAndEvaluateForecasts(concept: Concept, attempt: Review, state: RecallState, now: Date, targetRecall: Probability): Promise<void> {
   const pending = await getPendingForecasts(concept.id);
   await insertEvaluations(
     evaluateForecasts(pending, {
@@ -170,7 +173,7 @@ async function logAndEvaluateForecasts(concept: Concept, attempt: Review, state:
   await insertForecasts(
     FORECAST_HORIZONS_HOURS.map(horizonHours => {
       const targetAt = new Date(now.getTime() + horizonHours * 3_600_000);
-      const forecast = generateForecast({ concept, recallState: state, at: targetAt });
+      const forecast = generateForecast({ concept, recallState: state, at: targetAt, targetRecall });
       return {
         conceptId: concept.id,
         generatedAt: now.toISOString() as Timestamp,

@@ -9,8 +9,9 @@ import { calculateRecallProbability } from '@/domain/forecasting/engine';
 import type { Concept, ConceptDetail, RecallState } from '@/types';
 import { Button, EmptyState, ProgressRing, Skeleton, StatTile, StatusPill, TerminalPanel, pillFromForecast } from '@/components/ui';
 import { ForecastCurve, RetentionBars } from '@/components/charts';
+import { MemoryMap } from '@/components/MemoryMap';
 
-const TARGET = 0.8;
+const DEFAULT_TARGET = 0.8;
 const HOUR = 3_600_000;
 const WEEK_HOURS = 168;
 
@@ -54,16 +55,20 @@ export default function DashboardPage() {
   const [detail, setDetail] = useState<ConceptDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [now, setNow] = useState<number>(() => Date.now());
+  // The user's target recall (Settings); the default only shows until it loads.
+  const [target, setTarget] = useState<number>(DEFAULT_TARGET);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [s, q, a] = await Promise.all([
+      const [s, q, a, me] = await Promise.all([
         api.dashboard(),
         api.reviewQueue({ mode: 'practice', maxItems: 100 }),
         api.analytics().catch(() => null), // a failing analytics call must not take the dashboard down
+        api.me.get().catch(() => null),
       ]);
+      if (me) setTarget(me.targetRecall);
       setSummary(s);
       setQueue(q.items as QueueItem[]);
       setAnalytics(a);
@@ -89,10 +94,10 @@ export default function DashboardPage() {
   // "Due" means the scheduled next review has passed: the same definition the sidebar badge and the API use.
   const dueCount = summary?.dueConcepts ?? 0;
   const fading = items.filter(i => i.forecast.status !== 'Strong');
-  const atRisk7d = useMemo(() => items.filter(i => probabilityAt(i, WEEK_HOURS) < TARGET), [items, probabilityAt]);
+  const atRisk7d = useMemo(() => items.filter(i => probabilityAt(i, WEEK_HOURS) < target), [items, probabilityAt, target]);
   const crossing = useMemo(
-    () => items.filter(i => i.forecast.probability >= TARGET && probabilityAt(i, WEEK_HOURS) < TARGET),
-    [items, probabilityAt]
+    () => items.filter(i => i.forecast.probability >= target && probabilityAt(i, WEEK_HOURS) < target),
+    [items, probabilityAt, target]
   );
 
   // The most at-risk concepts are the curve's choices; default to the first.
@@ -256,7 +261,7 @@ export default function DashboardPage() {
                   correct: a.actualCorrectness,
                 }))}
                 now={now}
-                targetRecall={TARGET}
+                targetRecall={target}
                 title={title(detail.concept)}
               />
             </>
@@ -295,16 +300,19 @@ export default function DashboardPage() {
         </TerminalPanel>
       </section>
 
-      {/* 4. Upcoming risk */}
+      {/* 4. Predicted recall rolled up by subject and topic */}
+      <MemoryMap />
+
+      {/* 5. Upcoming risk */}
       <TerminalPanel title="UPCOMING_RISK.EXE" actions={<span className="font-mono text-[10px] tracking-[0.14em] text-cyan">ESTIMATE</span>}>
-        <p className="mb-4 text-sm text-ink-dim">Concepts that are fine today but expected to drop below the 80% target within 7 days. Bars show the estimate in 7 days.</p>
+        <p className="mb-4 text-sm text-ink-dim">Concepts that are fine today but expected to drop below your {Math.round(target * 100)}% target within 7 days. Bars show the estimate in 7 days.</p>
         <RetentionBars
           items={crossing.slice(0, 8).map(i => ({
             id: i.concept.id,
             label: `${title(i.concept)} (now ${pct(i.forecast.probability)})`,
             value: probabilityAt(i, WEEK_HOURS),
           }))}
-          targetRecall={TARGET}
+          targetRecall={target}
           emptyText="Nothing crosses below target within 7 days."
         />
       </TerminalPanel>

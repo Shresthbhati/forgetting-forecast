@@ -201,7 +201,7 @@ export default function ConceptDetailPage() {
             lastReviewedAt={recallState.lastReviewedAt ? new Date(recallState.lastReviewedAt).getTime() : null}
             attempts={[...attempts].reverse().map(a => ({ at: new Date(a.answeredAt).getTime(), predicted: a.predictedRecallProbability, correct: a.actualCorrectness }))}
             now={now}
-            targetRecall={0.8}
+            targetRecall={detail.targetRecall ?? 0.8}
             title={concept.prompt.slice(0, 60)}
           />
           <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4 text-center">

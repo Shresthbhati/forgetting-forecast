@@ -7,6 +7,7 @@
 import type { SourceKind, SourceLocation } from '../domain/ingestion/types.ts';
 import type { Question } from '../domain/assessment/types.ts';
 import type { TopicMastery } from '../domain/assessment/mastery.ts';
+import type { FeatureModelEvaluation } from '../domain/forecasting/featureModel.ts';
 
 export type { SourceKind, SourceLocation };
 
@@ -161,6 +162,8 @@ export interface SchedulingInput {
   recallState: RecallState;
   now: Date;
   userDailyCapacity?: number;
+  /** The user's target recall (profile setting). Defaults to 0.8. */
+  targetRecall?: Probability;
 }
 
 export interface ReviewOutcome {
@@ -168,6 +171,8 @@ export interface ReviewOutcome {
   recallState: RecallState;
   attempt: RetrievalAttemptInput;
   now: Date;
+  /** The user's target recall, used to time the next review. Defaults to 0.8. */
+  targetRecall?: Probability;
 }
 
 export interface UpdatedRecallState {
@@ -241,6 +246,8 @@ export interface AnalyticsSummary {
     brierImprovement: number | null;
     insufficientData: boolean;
   };
+  /** Experimental challenger using question type and topic, scored walk-forward against v1 and the baselines. Not used for scheduling. */
+  featureModel: FeatureModelEvaluation;
   forecastLog: {
     evaluated: number;
     pending: number;
@@ -351,6 +358,8 @@ export interface ReviewHistoryPage {
 }
 
 export interface ConceptDetail {
+  /** The user's target recall (0.5-0.99) the forecast status and next review were planned around. */
+  targetRecall: number;
   concept: Concept;
   recallState: RecallState;
   forecast: ForecastResult;

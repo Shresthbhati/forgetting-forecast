@@ -4,6 +4,7 @@
  * Errors thrown here carry the server's message and `code` (see ApiRequestError).
  */
 
+import type { SubjectRollup } from '@/domain/forecasting/rollup';
 import type {
   ConceptDetail,
   CreatedFromSource,
@@ -205,6 +206,9 @@ export const api = {
         xhr.send(body);
       }),
   },
+
+  // Predicted recall rolled up to topics and subjects
+  rollup: () => apiRequest<{ targetRecall: number; subjects: SubjectRollup[] }>('/api/rollup'),
 
   // Analytics
   analytics: (params?: { since?: string; until?: string }) => {

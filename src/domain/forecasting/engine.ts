@@ -25,7 +25,9 @@ import type {
 export const MODEL_VERSION = 'exponential-half-life-v1' as ModelVersion;
 export const SCHEDULER_VERSION = 'priority-queue-v1' as ModelVersion;
 
-const TARGET_RECALL = 0.8 as Probability;
+/** Default target when the caller (a user setting) gives none. */
+export const DEFAULT_TARGET_RECALL = 0.8 as Probability;
+const TARGET_RECALL = DEFAULT_TARGET_RECALL;
 const MIN_HALF_LIFE = 0.5 as HalfLifeHours;
 const MAX_HALF_LIFE = 24 * 365 as HalfLifeHours; // 1 year
 const MIN_PROBABILITY = 0.01 as Probability;
@@ -118,6 +120,7 @@ export function generateForecast(input: ForecastInput): ForecastResult {
  */
 export function updateRecallState(input: ReviewOutcome): UpdatedRecallState {
   const { concept, recallState, attempt, now } = input;
+  const targetRecall = input.targetRecall ?? TARGET_RECALL;
 
   // Calculate the prediction BEFORE seeing the outcome (already done in attempt)
   const predictedProbability = attempt.predictedRecallProbability;
@@ -146,7 +149,8 @@ export function updateRecallState(input: ReviewOutcome): UpdatedRecallState {
     concept,
     clampedHalfLife,
     now,
-    nextRepetitionCount
+    nextRepetitionCount,
+    targetRecall
   );
 
   const updatedState: RecallState = {
@@ -165,7 +169,7 @@ export function updateRecallState(input: ReviewOutcome): UpdatedRecallState {
     concept,
     recallState: updatedState,
     at: now,
-    targetRecall: TARGET_RECALL,
+    targetRecall,
   });
 
   return {
@@ -182,10 +186,11 @@ function calculateNextReviewTime(
   concept: Concept,
   halfLife: HalfLifeHours,
   from: Date,
-  repetitionCount: number
+  repetitionCount: number,
+  targetRecall: Probability = TARGET_RECALL
 ): Timestamp {
   const difficultyAdjustment = 1 - (concept.difficulty - 1) * 0.035;
-  const threshold = clamp(TARGET_RECALL / difficultyAdjustment, MIN_PROBABILITY, MAX_PROBABILITY);
+  const threshold = clamp(targetRecall / difficultyAdjustment, MIN_PROBABILITY, MAX_PROBABILITY);
   const hoursAtTarget = halfLife * Math.log(threshold) / Math.log(0.5);
 
   // Add some spacing for early repetitions
@@ -201,12 +206,13 @@ function calculateNextReviewTime(
  */
 export function calculateSchedulingPriority(input: SchedulingInput): SchedulingResult {
   const { concept, recallState, now } = input;
+  const targetRecall = input.targetRecall ?? TARGET_RECALL;
 
   const forecast = generateForecast({
     concept,
     recallState,
     at: now,
-    targetRecall: TARGET_RECALL,
+    targetRecall,
   });
 
   const lastReviewed = recallState.lastReviewedAt
@@ -244,7 +250,7 @@ export function calculateSchedulingPriority(input: SchedulingInput): SchedulingR
   };
 
   return {
-    nextReviewAt: recallState.nextReviewAt ?? calculateNextReviewTime(concept, recallState.estimatedHalfLifeHours, now, recallState.repetitionCount),
+    nextReviewAt: recallState.nextReviewAt ?? calculateNextReviewTime(concept, recallState.estimatedHalfLifeHours, now, recallState.repetitionCount, targetRecall),
     priorityScore,
     factors,
   };
@@ -257,7 +263,8 @@ export function generateHorizonForecasts(
   concept: Concept,
   recallState: RecallState,
   horizonsHours: number[],
-  now: Date
+  now: Date,
+  targetRecall: Probability = TARGET_RECALL
 ): Array<{ horizonHours: number; forecast: ForecastResult }> {
   return horizonsHours.map(horizonHours => {
     const at = new Date(now.getTime() + horizonHours * 3_600_000);
@@ -267,7 +274,7 @@ export function generateHorizonForecasts(
         concept,
         recallState,
         at,
-        targetRecall: TARGET_RECALL,
+        targetRecall,
       }),
     };
   });
@@ -278,7 +285,8 @@ export function generateHorizonForecasts(
  */
 export function initializeRecallState(
   concept: Concept,
-  initialHalfLifeHours: HalfLifeHours = 24 as HalfLifeHours
+  initialHalfLifeHours: HalfLifeHours = 24 as HalfLifeHours,
+  targetRecall: Probability = TARGET_RECALL
 ): RecallState {
   const now = new Date().toISOString() as Timestamp;
   return {
@@ -291,7 +299,7 @@ export function initializeRecallState(
     successfulRecallCount: 0,
     lapseCount: 0,
     lastReviewedAt: null,
-    nextReviewAt: calculateNextReviewTime(concept, initialHalfLifeHours, new Date(), 0),
+    nextReviewAt: calculateNextReviewTime(concept, initialHalfLifeHours, new Date(), 0, targetRecall),
     lastPredictedRecallProbability: null,
     updatedAt: now,
   };
