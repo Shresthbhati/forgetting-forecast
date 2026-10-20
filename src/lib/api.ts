@@ -4,12 +4,21 @@
  * Errors thrown here carry the server's message and `code` (see ApiRequestError).
  */
 
+import type { SubjectRollup } from '@/domain/forecasting/rollup';
 import type {
   ConceptDetail,
   CreatedFromSource,
+  Exam,
+  ExamPlanResponse,
+  MixedTestResponse,
+  PrerequisitesResponse,
+  QuizResponse,
+  SourceMastery,
   Source,
   SourceDetail,
+  SourceGroup,
   UploadSourceResult,
+  YoutubeImportResult,
   ForecastLogEntry,
   Me,
   ReviewHistoryPage,
@@ -90,6 +99,7 @@ export const api = {
     }) => apiRequest<any>('/api/concepts', { method: 'POST', body: JSON.stringify(input) }),
     get: (id: string) => apiRequest<any>(`/api/concepts/${id}`),
     detail: (id: string) => apiRequest<ConceptDetail>(`/api/concepts/${id}/detail`),
+    prerequisites: (id: string) => apiRequest<PrerequisitesResponse>(`/api/concepts/${id}/prerequisites`),
     update: (id: string, input: Partial<any>) => apiRequest<any>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
     delete: (id: string) => apiRequest<void>(`/api/concepts/${id}`, { method: 'DELETE' }),
   },
@@ -169,9 +179,12 @@ export const api = {
 
   // Uploaded study material
   sources: {
-    list: () => apiRequest<{ sources: Source[] }>('/api/sources'),
+    list: () => apiRequest<{ sources: Source[]; groups: SourceGroup[] }>('/api/sources'),
     get: (id: string) => apiRequest<SourceDetail>(`/api/sources/${id}`),
     delete: (id: string) => apiRequest<void>(`/api/sources/${id}`, { method: 'DELETE' }),
+    quiz: (id: string, sectionId: string, seed?: number) =>
+      apiRequest<QuizResponse>(`/api/sources/${id}/quiz?sectionId=${sectionId}${seed === undefined ? '' : `&seed=${seed}`}`),
+    mastery: (id: string) => apiRequest<SourceMastery>(`/api/sources/${id}/mastery`),
     createConcepts: (
       id: string,
       input: {
@@ -179,6 +192,8 @@ export const api = {
         difficulty?: number;
       }
     ) => apiRequest<CreatedFromSource>(`/api/sources/${id}/concepts`, { method: 'POST', body: JSON.stringify(input) }),
+    importYoutube: (url: string, subject: string) =>
+      apiRequest<YoutubeImportResult>('/api/sources/youtube', { method: 'POST', body: JSON.stringify({ url, subject }) }),
     /**
      * Multipart upload with progress (fetch cannot report upload progress). `onProgress` gets 0-1 while bytes are
      * sent; the promise resolves after the server has finished parsing.
@@ -200,6 +215,27 @@ export const api = {
         xhr.send(body);
       }),
   },
+
+  // Exams and revision plans
+  exams: {
+    list: () => apiRequest<{ exams: Exam[] }>('/api/exams'),
+    create: (input: { subject: string; name: string; examDate: string }) =>
+      apiRequest<Exam>('/api/exams', { method: 'POST', body: JSON.stringify(input) }),
+    delete: (id: string) => apiRequest<void>(`/api/exams/${id}`, { method: 'DELETE' }),
+    plan: (id: string) => apiRequest<ExamPlanResponse>(`/api/exams/${id}/plan`),
+  },
+
+  // Mixed test across subjects
+  mixedTest: (params?: { size?: number; subjects?: string[]; seed?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.size) search.set('size', String(params.size));
+    if (params?.subjects?.length) search.set('subjects', params.subjects.join(','));
+    if (params?.seed !== undefined) search.set('seed', String(params.seed));
+    return apiRequest<MixedTestResponse>(`/api/mixed-test?${search}`);
+  },
+
+  // Predicted recall rolled up to topics and subjects
+  rollup: () => apiRequest<{ targetRecall: number; subjects: SubjectRollup[] }>('/api/rollup'),
 
   // Analytics
   analytics: (params?: { since?: string; until?: string }) => {

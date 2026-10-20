@@ -67,6 +67,7 @@ const EXPORT_TABLES = [
   'sources',
   'source_sections',
   'source_terms',
+  'exams',
 ] as const;
 
 /** PostgREST returns at most 1000 rows per request, so each table is read in pages. */

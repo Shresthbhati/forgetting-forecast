@@ -7,6 +7,7 @@ import { createSupabaseServerClient } from '@/server/db/supabase';
 import { getConcept } from '@/server/repositories/concepts';
 import { getOrCreateRecallState } from '@/server/repositories/recallStates';
 import { getReviewQueue as getReviewQueueRepo, getDashboardSummary } from '@/server/repositories/analytics';
+import { getTargetRecall } from '@/server/repositories/profile';
 import { getRetrievalAttempts } from '@/server/repositories/retrievalAttempts';
 import { listForecastLog } from '@/server/repositories/forecasts';
 import { generateForecast, generateHorizonForecasts, calculateSchedulingPriority } from '@/domain/forecasting/engine';
@@ -47,14 +48,16 @@ export async function getConceptForecast(
     'exponential-half-life-v1'
   );
 
+  const targetRecall = await getTargetRecall();
   const currentForecast = generateForecast({
     concept,
     recallState,
     at: new Date(),
+    targetRecall,
   });
 
   const horizonForecasts = horizonsHours
-    ? generateHorizonForecasts(concept, recallState, horizonsHours, new Date())
+    ? generateHorizonForecasts(concept, recallState, horizonsHours, new Date(), targetRecall)
     : [];
 
   return {
@@ -82,7 +85,8 @@ export async function getPrioritizedReviewQueue(
   subject?: string,
   maxItems = 20
 ): Promise<Array<ReviewQueueItem & { schedulingFactors: Awaited<ReturnType<typeof calculateSchedulingPriority>>['factors'] }>> {
-  const items = await getReviewQueue(mode, subject, maxItems);
+  const targetRecall = await getTargetRecall();
+  const items = await getReviewQueueRepo(mode, subject, maxItems, targetRecall);
 
   // Add scheduling factors to each item
   const enriched = await Promise.all(items.map(async item => {
@@ -90,6 +94,7 @@ export async function getPrioritizedReviewQueue(
       concept: item.concept,
       recallState: item.recallState,
       now: new Date(),
+      targetRecall,
     });
     return { ...item, schedulingFactors: scheduling.factors };
   }));
@@ -108,15 +113,17 @@ export async function getConceptDetail(conceptId: UUID): Promise<ConceptDetail> 
   if (!concept) throw new Error('Concept not found');
 
   const recallState = await getOrCreateRecallState(concept.id, 24, 'exponential-half-life-v1');
+  const targetRecall = await getTargetRecall();
   const now = new Date();
 
   return {
+    targetRecall,
     concept,
     recallState,
-    forecast: generateForecast({ concept, recallState, at: now }),
-    horizonForecasts: generateHorizonForecasts(concept, recallState, [...FORECAST_HORIZONS_HOURS], now),
+    forecast: generateForecast({ concept, recallState, at: now, targetRecall }),
+    horizonForecasts: generateHorizonForecasts(concept, recallState, [...FORECAST_HORIZONS_HOURS], now, targetRecall),
     attempts: await getRetrievalAttempts(concept.id, 50),
-    priority: calculateSchedulingPriority({ concept, recallState, now }),
+    priority: calculateSchedulingPriority({ concept, recallState, now, targetRecall }),
   };
 }
 
@@ -135,6 +142,7 @@ export async function getConceptsWithForecasts(): Promise<Array<{
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Unauthorized');
 
+  const targetRecall = await getTargetRecall();
   const { data, error } = await supabase
     .from('concepts')
     .select(`
@@ -208,6 +216,7 @@ export async function getConceptsWithForecasts(): Promise<Array<{
       concept,
       recallState,
       at: new Date(),
+      targetRecall,
     });
 
     return { concept, recallState, forecast };

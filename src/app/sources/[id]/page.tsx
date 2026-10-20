@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Check, Plus, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, ListChecks, Plus, RotateCcw } from 'lucide-react';
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatLocation } from '@/domain/ingestion/location';
-import type { SourceDetail, SourceSection, SourceTerm } from '@/types';
+import { youtubeLinkAt } from '@/domain/ingestion/youtube';
+import type { SourceDetail, SourceMastery, SourceSection, SourceTerm } from '@/types';
+import { MIN_MASTERY_ATTEMPTS } from '@/domain/assessment/mastery';
 import { Badge, Button, Dialog, EmptyState, Skeleton, StatusPill, TerminalPanel, Textarea, useToast } from '@/components/ui';
 
-type Tab = 'reader' | 'terms';
+type Tab = 'reader' | 'terms' | 'mastery';
 
 function termsLabel(count: number) {
   return `${count} key term${count === 1 ? '' : 's'}`;
@@ -27,6 +29,8 @@ export default function SourceDetailPage() {
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'all' | 'defined'>('all');
+  const [mastery, setMastery] = useState<SourceMastery | null>(null);
+  const [masteryError, setMasteryError] = useState('');
 
   const [passage, setPassage] = useState<SourceSection | null>(null);
   const [form, setForm] = useState({ prompt: '', answer: '' });
@@ -50,6 +54,17 @@ export default function SourceDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Mastery is computed from real attempts, so it is read when the tab is opened (a quiz may have just changed it).
+  useEffect(() => {
+    if (tab !== 'mastery') return;
+    let cancelled = false;
+    setMasteryError('');
+    api.sources.mastery(id).then(m => !cancelled && setMastery(m)).catch(err => !cancelled && setMasteryError(err instanceof Error ? err.message : 'Could not load mastery'));
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, id]);
 
   const sectionById = useMemo(() => new Map((detail?.sections ?? []).map(s => [s.id, s])), [detail]);
   const visibleTerms = useMemo(
@@ -146,6 +161,7 @@ export default function SourceDetailPage() {
 
   const { source } = detail;
   const unit = source.kind === 'pptx' ? 'slide' : 'page';
+  const isVideo = source.kind === 'youtube' && source.sourceUrl !== null;
 
   return (
     <div className="space-y-6">
@@ -162,13 +178,24 @@ export default function SourceDetailPage() {
             {detail.sections.length} sections · {termsLabel(detail.terms.length)}
           </span>
         </div>
+        {isVideo && (
+          <a
+            href={source.sourceUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center gap-1 font-mono text-xs uppercase tracking-wider text-cyan hover:text-ink sm:min-h-0"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />Open on YouTube
+          </a>
+        )}
         <p className="font-mono text-[11px] text-ink-dim">
           Terms and definitions are picked out by rules, not by a model. Check them against the text before you rely on them.
+          {isVideo && ' This text comes from the video\'s captions; automatic captions have no punctuation and can mishear words, so sentences and definitions may be rougher than for documents.'}
         </p>
       </div>
 
       <div role="tablist" aria-label="Source views" className="flex gap-2">
-        {([['reader', 'Outline & reader'], ['terms', `Key terms (${detail.terms.length})`]] as const).map(([key, label]) => (
+        {([['reader', 'Outline & reader'], ['terms', `Key terms (${detail.terms.length})`], ['mastery', 'Mastery']] as const).map(([key, label]) => (
           <button
             key={key}
             role="tab"
@@ -221,10 +248,28 @@ export default function SourceDetailPage() {
                 <p className="font-mono text-[11px] uppercase tracking-wider text-ink-dim">{formatLocation(active.location) || 'Document'}</p>
                 <h2 className="break-words font-display text-xl font-bold text-ink">{active.heading}</h2>
               </header>
+              {isVideo && (
+                <a
+                  href={youtubeLinkAt(source.sourceUrl!, active.location)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-1 font-mono text-xs uppercase tracking-wider text-cyan hover:text-ink sm:min-h-0"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />Watch from {formatLocation(active.location).split('–')[0]}
+                </a>
+              )}
               <p className="whitespace-pre-line break-words text-sm leading-relaxed text-ink">{active.text}</p>
-              <Button variant="secondary" size="sm" className="min-h-11 sm:min-h-0" onClick={() => openPassage(active)}>
-                <Plus className="h-4 w-4" aria-hidden="true" />Make a concept from this passage
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" className="min-h-11 sm:min-h-0" onClick={() => openPassage(active)}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />Make a concept from this passage
+                </Button>
+                <Link
+                  href={`/sources/${id}/quiz?section=${active.id}`}
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-sunset px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-void shadow-[inset_0_1px_0_rgb(255_255_255/0.65)] sm:min-h-0"
+                >
+                  <ListChecks className="h-4 w-4" aria-hidden="true" />Quiz this section
+                </Link>
+              </div>
             </article>
           )}
         </div>
@@ -292,6 +337,44 @@ export default function SourceDetailPage() {
                 })}
               </ul>
             </>
+          )}
+        </div>
+      )}
+
+      {tab === 'mastery' && (
+        <div id="panel-mastery" role="tabpanel" aria-labelledby="tab-mastery" className="space-y-4">
+          <p className="text-sm text-ink-dim">
+            Per topic (section), from your real answers on concepts made from this source. Recent answers count more. A topic needs at least {MIN_MASTERY_ATTEMPTS} answers before a mastery figure is shown.
+          </p>
+          {masteryError ? (
+            <TerminalPanel title="SIGNAL_LOST.EXE"><p role="alert" className="py-3 text-center text-sm text-ink-dim">{masteryError}</p></TerminalPanel>
+          ) : !mastery ? (
+            <Skeleton className="h-40 w-full" aria-busy="true" />
+          ) : mastery.topics.length === 0 ? (
+            <TerminalPanel title="EMPTY.EXE">
+              <EmptyState title="No concepts from this source yet" body="Add some key terms as concepts, answer a section quiz, and mastery per topic will appear here." />
+            </TerminalPanel>
+          ) : (
+            <ul className="space-y-3">
+              {mastery.topics.map(t => (
+                <li key={t.topic} className="space-y-2 rounded-lg border border-line bg-panel/85 p-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="min-w-0 break-words text-sm font-semibold text-ink">{t.topic}</p>
+                    <p className="font-mono text-[11px] text-ink-dim">{t.concepts} concept{t.concepts === 1 ? '' : 's'} · {t.attempts} answer{t.attempts === 1 ? '' : 's'}</p>
+                  </div>
+                  {t.mastery === null ? (
+                    <p className="text-xs text-ink-dim">Not enough data yet ({t.attempts} of {MIN_MASTERY_ATTEMPTS} answers).</p>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div role="meter" aria-label={`Mastery of ${t.topic}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(t.mastery * 100)} className="h-2 flex-1 overflow-hidden rounded bg-panel-hi">
+                        <div className={cn('h-full', t.mastery >= 0.8 ? 'bg-strong' : t.mastery >= 0.55 ? 'bg-watch' : 'bg-due')} style={{ width: `${t.mastery * 100}%` }} />
+                      </div>
+                      <span className="w-12 text-right font-mono text-sm text-ink">{Math.round(t.mastery * 100)}%</span>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}

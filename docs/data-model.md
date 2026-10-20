@@ -169,17 +169,28 @@ Uploaded study material. All three have RLS (`auth.uid() = user_id`); inserts al
 
 | Table | Columns |
 |---|---|
-| `sources` | `id`, `user_id`, `subject`, `title`, `kind` (`pdf\|pptx\|docx\|text`), `storage_path`, `byte_size`, `sha256`, `status` (`processing\|ready\|failed`), `error`, `unit_count`, `created_at`, `updated_at`; **unique (`user_id`, `sha256`)** |
+| `sources` | `id`, `user_id`, `subject`, `title`, `kind` (`pdf\|pptx\|docx\|text\|youtube`), `storage_path`, `byte_size`, `sha256`, `status` (`processing\|ready\|failed`), `error`, `unit_count`, `source_url` (YouTube), `group_id` (→ `source_groups`, `ON DELETE SET NULL`), `created_at`, `updated_at`; **unique (`user_id`, `sha256`)** |
 | `source_sections` | `id`, `source_id` (cascade), `user_id`, `ordinal` (unique per source), `level`, `heading`, `text`, `location` JSONB, `char_count` |
 | `source_terms` | `id`, `source_id` (cascade), `section_id` (cascade), `user_id`, `term`, `definition` (nullable), `location` JSONB, `score` |
 
-`location` is `{page}`, `{slide}`, `{pageStart,pageEnd}`, `{slideStart,slideEnd}` or `{}` (Word/text have no pages).
+`location` is `{page}`, `{slide}`, `{pageStart,pageEnd}`, `{slideStart,slideEnd}`, `{t}` / `{tStart,tEnd}` (YouTube, seconds) or `{}` (Word/text have no pages).
 
 `concepts` gained nullable `source_id`, `source_section_id` (both `ON DELETE SET NULL`, so deleting a source keeps the concept) and `source_location` JSONB. The human-readable label ("DBMS Notes, p. 12") lives in the existing `source_reference` column. The `concepts` insert/update policies reject a `source_id` / `source_section_id` the user doesn't own.
 
 Files live in the private Storage bucket `sources` at `{user_id}/{source_id}.{ext}`; Storage policies allow a user only their own `{user_id}/` folder.
 
 `ingest_source_tx(p_source_id, p_unit_count, p_sections jsonb, p_terms jsonb)` (`SECURITY INVOKER`, `anon` revoked): inserts the sections and terms (terms reference their section by `section_ordinal`) and sets the source `ready` in one transaction; raises `Source not found` for another user's source and `Source already ingested` if sections exist.
+
+### 7. exams (migration 008) and source_groups (migration 009)
+
+Both have RLS (`auth.uid() = user_id`) for select/insert/update/delete.
+
+| Table | Columns |
+|---|---|
+| `exams` | `id`, `user_id`, `subject`, `name`, `exam_date` DATE, `created_at`; index (`user_id`, `exam_date`) |
+| `source_groups` | `id`, `user_id`, `title`, `url`, `created_at` — one row per imported playlist |
+
+A YouTube source has `kind = 'youtube'`, `storage_path = 'youtube:<videoId>'` (no file is stored), `byte_size = 0`, `source_url`, and `sha256 = sha256('youtube:<videoId>')`, so importing a video twice is idempotent. The `sources` insert/update policies reject a `group_id` the user doesn't own.
 
 ## Key Relationships
 

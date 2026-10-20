@@ -3,6 +3,8 @@
  */
 
 import { createSupabaseServerClient } from '@/server/db/supabase';
+import { getTargetRecall } from '@/server/repositories/profile';
+import { evaluateFeatureModel } from '@/domain/forecasting/featureModel';
 import { getUserRetrievalAttempts } from '@/server/repositories/retrievalAttempts';
 import { getForecastEvaluationStats } from '@/server/repositories/forecasts';
 import {
@@ -72,11 +74,14 @@ export async function getNextRecommendedReviews(limit: number): Promise<ConceptW
 export async function getReviewQueue(
   mode: 'due' | 'practice' | 'experiment' = 'due',
   subject?: string,
-  maxItems = 20
+  maxItems = 20,
+  /** Defaults to the user's profile setting, so every caller plans around the same target. */
+  targetRecallOverride?: number
 ): Promise<ReviewQueueItem[]> {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Unauthorized');
+  const targetRecall = targetRecallOverride ?? (await getTargetRecall());
 
   const { data, error } = await supabase.rpc('get_due_concepts', {
     p_limit: maxItems,
@@ -109,7 +114,6 @@ export async function getReviewQueue(
     const raw = Math.pow(0.5, elapsed / halfLife);
     const difficultyAdjustment = 1 - (row.difficulty - 1) * 0.035;
     const probability = Math.min(0.99, Math.max(0.01, raw * difficultyAdjustment));
-    const targetRecall = 0.8;
     const threshold = Math.min(0.99, Math.max(0.01, targetRecall / difficultyAdjustment));
     const hoursAtTarget = halfLife * Math.log(threshold) / Math.log(0.5);
     const dueInHours = Math.max(0, hoursAtTarget - elapsed);
@@ -297,7 +301,7 @@ export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
 
 /** The v2 analytics block: every metric is null + insufficientData when its sample is too small. */
 async function buildAnalyticsV2(attempts: Review[]): Promise<
-  Pick<AnalyticsSummary, 'immediateVsDelayed' | 'calibration' | 'baseline' | 'forecastLog'>
+  Pick<AnalyticsSummary, 'immediateVsDelayed' | 'calibration' | 'baseline' | 'forecastLog' | 'featureModel'>
 > {
   const timed = attempts.map(a => ({
     predictedRecallProbability: a.predictedRecallProbability,
@@ -306,8 +310,24 @@ async function buildAnalyticsV2(attempts: Review[]): Promise<
     elapsedSincePreviousReviewHours: a.elapsedSincePreviousReviewHours,
   }));
 
+  // Topic comes from the concept; question type from the attempt metadata written by quizzes and mixed tests.
+  const supabase = await createSupabaseServerClient();
+  const { data: conceptRows } = await supabase.from('concepts').select('id, topic');
+  const topicOf = new Map((conceptRows ?? []).map(c => [c.id as string, (c.topic as string | null) ?? null]));
+  const featureModel = evaluateFeatureModel(
+    attempts.map(a => ({
+      answeredAt: a.answeredAt,
+      predicted: a.predictedRecallProbability,
+      correct: a.actualCorrectness,
+      elapsedSincePreviousReviewHours: a.elapsedSincePreviousReviewHours,
+      questionType: typeof a.metadata?.questionType === 'string' ? (a.metadata.questionType as string) : null,
+      topic: topicOf.get(a.conceptId) ?? null,
+    }))
+  );
+
   const stats = await getForecastEvaluationStats();
   return {
+    featureModel,
     immediateVsDelayed: immediateVsDelayed(timed),
     calibration: calibrationSummary(timed),
     baseline: compareWithBaselines(timed),

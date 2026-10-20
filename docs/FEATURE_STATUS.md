@@ -8,7 +8,7 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 | Area | Status | Notes |
 |---|---|---|
-| Schema + RLS (10 tables) | ✅ | `supabase/migrations/001`–`007`; `npm run test:rls` asserts isolation (37 checks + the sources checks added with 007) |
+| Schema + RLS (12 tables) | ✅ | `supabase/migrations/001`–`009`; `npm run test:rls` asserts isolation (extended for sources, exams and source groups). **Not run in the build environment** (no service-role key and no outbound access to Supabase); 008/009 were applied to the project and their policies spot-checked in SQL |
 | Cross-user RPC leak | ✅ fixed | `002`: `SECURITY INVOKER`, `auth.uid()`, `anon` revoked; the old `p_user_id` signatures no longer exist |
 | Open redirect in `/auth/callback` | ✅ fixed | `src/lib/safeNextPath.ts` + unit tests |
 | Session refresh + signed-out redirect | ✅ | `src/middleware.ts` |
@@ -26,7 +26,18 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | Source upload + extraction | ✅ | PDF / PPTX / DOCX / TXT / MD; page & slide numbers survive extraction (tested with generated files); scanned PDFs fail with "No text layer — OCR not supported yet" |
 | Outline, key terms, definitions | 🟡 | rule-based (no LLM): pattern matching, so misses and false positives are expected; each term shows its source sentence |
 | Sources API + atomic ingest | ✅ | `POST/GET /api/sources`, `GET/DELETE /api/sources/:id`, `POST /api/sources/:id/concepts`; `ingest_source_tx` writes sections + terms + status in one transaction |
+| Question generation (phase 2) | 🟡 | rule-based: definition, cloze, multiple choice, true/false, numerical; quality gates and deduplication; unit-tested, but wording quality on real notes is unproven |
+| Answer grading | 🟡 | exact for choice questions; word overlap + edit distance for short answers; tolerance for numbers. Always followed by an override step |
+| Section quiz + attempts | ✅ | `GET /api/sources/:id/quiz`; answers go through `submit_review_tx` with question type in metadata; numericals are practice-only |
+| Per-topic mastery | ✅ | `GET /api/sources/:id/mastery`; recency-weighted; `null` below 5 answers |
 | Source storage isolation | ✅ | private bucket, `{user_id}/` folders; export includes sources, deletion removes files |
+| Target recall in scheduling (phase 3) | ✅ | `target_recall` setting drives next-review time and status; unit-tested (`targetRecall.test.ts`) |
+| Topic / subject roll-up | ✅ | `GET /api/rollup`, dashboard Memory map; checked at 375px and desktop |
+| Feature-adjusted challenger | 🟡 | question type + topic ratios, walk-forward vs v1 and baselines; **evaluation only**, not used for scheduling; needs ≥ 30 scored attempts to be called better |
+| Mixed tests (phase 4) | 🟡 | `GET /api/mixed-test`, `/test`; weighted sampling + interleaving unit-tested; variety is limited by the definitions in the sources |
+| Prerequisite graph + check (phase 5) | 🟡 | name matching in definitions; `GET /api/concepts/:id/prerequisites`, `/concepts/[id]/check`; the panel on the concept page was not browser-checked |
+| Exam mode (phase 5) | ✅ | `exams` table + RLS, `/api/exams`, `/exams`, plan unit-tested; checked at 375px and desktop |
+| YouTube sources (phase 6) | 🟡 | captions only, playlists as groups; parsing and fetching tested against fixtures and a mocked `fetch`; **never run against the real YouTube** and it depends on an undocumented page structure |
 | Write rate limit | 🟡 | in-memory per instance (60/min/user/scope); move to Redis/Upstash for multi-instance |
 | Scheduler uses `target_recall` | ⬜ | stored on the profile; the engine plans around a fixed 80% |
 | Reads paginated past 1,000 rows | 🟡 | PostgREST caps responses at 1,000 rows; analytics and the stats query note this limit |
@@ -39,7 +50,8 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | `/auth/*` | ✅ | restyled; `callbackUrl` sanitised to same-site paths |
 | `/` dashboard | ✅ | next action, 4 tiles (`ESTIMATE` / `OBSERVED`), curve, queue with real "why", upcoming risk |
 | `/review` | ✅ | keyboard-first, pause stops the latency timer, idempotent retry, "NOT SAVED" path, session summary |
-| `/sources`, `/sources/[id]` | ✅ | upload with progress, status pills, outline + reader, terms with Add as concept / Add all; checked at 375px and desktop |
+| `/sources`, `/sources/[id]` | ✅ | upload with progress, status pills, outline + reader, terms with Add as concept / Add all, Mastery tab; checked at 375px and desktop |
+| `/sources/[id]/quiz` | ✅ | all question types, override step, save-retry, practice-only items, add-terms-and-quiz; checked at 375px and desktop |
 | `/library` | ✅ | search, subject filter, add/delete dialogs, recall rings |
 | `/concepts/[id]` | ✅ | forecast curve, real scheduler factors, attempts, forecast log, edit/delete |
 | `/analytics` | ✅ | every number shows n; baseline result reported even when the model loses |
@@ -55,7 +67,8 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 - The half-life model is heuristic and unvalidated. On the shipped demo seed it **does not** beat the "your past accuracy" baseline; the Analytics page reports that.
 - Demo data is simulated; its calibration shows the pipeline works, not that the model predicts real people.
-- Not built: FSRS, offline mode, OCR, YouTube, cloze / multiple-choice / true-false generation (phases 2+ of `docs/VISION_PLAN.md`), e2e browser tests in CI, Lighthouse CI.
+- Not built: FSRS, offline mode, OCR, speech-to-text for videos without captions, e2e browser tests in CI, Lighthouse CI. All six phases of `docs/VISION_PLAN.md` are built; see its limits sections.
+- The live scripts (`npm run test:api`, `npm run test:rls`) were extended for phases 2–6 but could not be run in the build environment; browser checks used a mocked API.
 
 ## Contrast (computed WCAG ratios on `night` / `panel` / `panel-hi`)
 

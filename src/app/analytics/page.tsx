@@ -165,6 +165,52 @@ export default function AnalyticsPage() {
         </TerminalPanel>
       </div>
 
+
+      <TerminalPanel title="FEATURE_MODEL.EXP" actions={<span className="font-mono text-[10px] tracking-[0.14em] text-watch">EXPERIMENTAL</span>}>
+        {a.featureModel.insufficientData ? (
+          <EmptyState title="Not enough data yet" body={`The challenger needs ${MIN}+ reviews that follow an earlier review (have ${a.featureModel.n}).`} />
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-ink-dim">
+              A challenger that also uses the <strong className="text-ink">question type</strong> and the <strong className="text-ink">topic</strong>, learned only from your earlier answers. Brier score on the same {a.featureModel.n} attempts as above; lower is better.
+            </p>
+            <dl className="space-y-3 font-mono text-sm">
+              {[
+                { k: 'Current model (v1)', v: a.featureModel.v1Brier, c: 'text-cyan' },
+                { k: 'Challenger (question type + topic)', v: a.featureModel.v2Brier, c: 'text-ink' },
+                { k: 'Baseline: your past accuracy', v: a.featureModel.historicalRateBrier, c: 'text-ink' },
+                { k: 'Baseline: fixed 24h half-life', v: a.featureModel.fixedHalfLifeBrier, c: 'text-ink' },
+              ].map(r => (
+                <div key={r.k} className="flex items-baseline justify-between border-b border-line/60 pb-2">
+                  <dt className="text-ink-dim">{r.k}</dt>
+                  <dd className={`font-semibold tabular-nums ${r.c}`}>{r.v?.toFixed(3)}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className={`rounded border p-3 text-sm ${a.featureModel.worthPromoting ? 'border-strong/40 bg-strong/10 text-strong' : 'border-watch/40 bg-watch/10 text-watch'}`}>
+              {a.featureModel.worthPromoting
+                ? `The challenger beats v1 (by ${a.featureModel.improvementOverV1?.toFixed(3)} Brier) and both baselines on ${a.featureModel.n} attempts. It would be worth switching scheduling to it.`
+                : a.featureModel.v2BeatsV1
+                  ? `The challenger is ahead of v1 by ${a.featureModel.improvementOverV1?.toFixed(3)} Brier but has not cleared the bar (it must also beat both baselines, with 30+ attempts). Scheduling still uses v1.`
+                  : `The challenger does NOT beat v1 on your data (${Math.abs(a.featureModel.improvementOverV1 ?? 0).toFixed(3)} Brier worse). Scheduling uses v1.`}
+            </p>
+            {(a.featureModel.learned.byType.length > 0) && (
+              <div>
+                <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-ink-dim">Learned per question type (accuracy vs what v1 predicted)</p>
+                <ul className="space-y-1 font-mono text-xs">
+                  {a.featureModel.learned.byType.map(t => (
+                    <li key={t.key} className="flex justify-between gap-3">
+                      <span className="text-ink">{t.key} <span className="text-ink-dim">n={t.n}</span></span>
+                      <span className="text-ink-dim">observed {pct(t.accuracy)} · predicted {pct(t.meanPredicted)} · ×{t.ratio.toFixed(2)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </TerminalPanel>
+
       <TerminalPanel title="FORECAST_LOG_REPORT.EXE" actions={<span className="font-mono text-[10px] tracking-[0.14em] text-cyan">ESTIMATE VS OBSERVED</span>}>
         {a.forecastLog.byHorizon.length === 0 ? (
           <EmptyState title="No evaluated forecasts yet" body="Forecasts are checked when you review the same concept again within the forecast window." />

@@ -107,7 +107,10 @@ Node runtime. Writes are rate-limited (about 60/minute/user). See `docs/VISION_P
 Fields: `file` (PDF, PPTX, DOCX, TXT, MD; max 20 MB, 300 pages/slides), `subject` (1–100 chars), `title?`. The type is decided by extension **and** the file's leading bytes. `201` `{ source, duplicate: false }` when processed; `200` `{ source, duplicate: true }` when the same file (sha256) was uploaded before. A file that can't be read still returns `201` with `source.status = "failed"` and a readable `source.error` (e.g. `No text layer — OCR not supported yet`); re-uploading it retries. `400` for a missing/unsupported/mismatched file, blank subject or a file over the limit; `401` signed out.
 
 ### `GET /api/sources`
-`200` `{ sources: [{ id, subject, title, kind, byteSize, status, error, unitCount, createdAt, ... }] }`, newest first.
+`200` `{ sources: [{ id, subject, title, kind, byteSize, status, error, unitCount, sourceUrl, groupId, createdAt, ... }], groups: [{ id, title, url, createdAt }] }`, newest first. `kind` is `pdf|pptx|docx|text|youtube`; `groups` are imported playlists.
+
+### `POST /api/sources/youtube`
+Body `{ url, subject }` (a YouTube video, short link, shorts/embed link or playlist link). Captions only. `201` (or `200` if everything already existed) `{ group, items: [{ videoId, status: "imported"|"duplicate"|"failed", source, error }], truncated }`. A video gives one item and `group: null`; a playlist gives a `group` and up to 25 items (`truncated: true` if it had more). A video that can't be read (no captions, private, removed, ...) is a `failed` item with a readable `error` and its source kept as `failed`; importing it again retries. `400` for a link that isn't YouTube, a playlist that can't be read, or a missing subject; `401` signed out. `maxDuration` 120 s. Sections have `location: { tStart, tEnd }` in seconds.
 
 ### `GET /api/sources/:id`
 `200` `{ source, sections: [{ id, ordinal, level, heading, text, location, charCount }], terms: [{ id, sectionId, term, definition, location, score }], addedTermIds }`. `terms[].definition` is `null` when the term was picked by frequency/heading only. `404` for an unknown or another user's id.
@@ -118,7 +121,32 @@ Fields: `file` (PDF, PPTX, DOCX, TXT, MD; max 20 MB, 300 pages/slides), `subject
 ### `POST /api/sources/:id/concepts`
 Body `{ items: [{ type: "term", termId } | { type: "passage", sectionId, prompt, answer }], difficulty?: 1-5 (default 3) }`, 1–100 items. `201` `{ created: Concept[], skipped: [{ termId?, sectionId?, reason }] }`. A term becomes `Define: <term>` → its definition sentence (or, with no detected definition, the first sentence that mentions it; skipped if there is none). Each concept stores `sourceId`, `sourceSectionId`, `sourceLocation` and `sourceReference` ("Title, p. 12"). Repeating a term is skipped with `reason: "Already added"`.
 
+### `GET /api/sources/:id/quiz?sectionId=<uuid>&seed=<int>`
+`200` `{ section: { id, heading, location }, questions, seed, termsInSection, termsWithoutConcept, unaddedTermIds }`. Up to 10 rule-generated questions for one section, each `{ id, type: "definition"|"cloze"|"mcq"|"truefalse"|"numerical", grading: "exact"|"short"|"numeric", prompt, options?, answer, acceptable, gradeText?, numeric?, explanation, conceptId, sectionId, location, label: "Generated from p. N", practiceOnly }`. Only terms that already have a concept are asked about (`conceptId` set); numericals come from formulas in the text and have `practiceOnly: true`, `conceptId: null`. The same `seed` gives the same quiz. `400` without a valid `sectionId`, `404` for an unknown source or section.
+
+Record an answer with the normal `POST /api/reviews` (`reviewMode: "practice"`) and put `{ source: "quiz", generated: true, questionType, questionId, grading, autoVerdict, overridden }` in `metadata`.
+
+### `GET /api/sources/:id/mastery`
+`200` `{ topics: [{ topic, concepts, attempts, correct, mastery, insufficientData }] }`, weakest first. `topic` is the section heading the concepts were made from. `mastery` (0–1, recency-weighted) is `null` with `insufficientData: true` below 5 attempts. `404` for an unknown source.
+
 `GET /api/review-queue` items and `GET /api/concepts/:id` carry `concept.sourceReference` / `sourceId` / `sourceLocation` for these concepts.
+
+## Roll-up, mixed tests, knowledge graph, exams
+
+### `GET /api/rollup`
+`200` `{ targetRecall, subjects: [{ key, concepts, meanRecall, atRisk, reviewed, lapses, weakest: { id, probability } | null, topics: [same shape] }] }`. Predicted recall now, rolled up; `atRisk` = below the user's target.
+
+### `GET /api/mixed-test?size=&subjects=&seed=`
+`size` 3–25 (default 10), `subjects` comma-separated, `seed` int. `200` `{ questions: [question + { subject, predictedRecall, lapseCount }], seed, targetRecall, subjectsAvailable: [{ subject, concepts }], conceptsConsidered }`. Concepts are sampled weighted by (1 − predicted recall) and lapse count, then interleaved by subject. The same seed gives the same test. Record answers with `POST /api/reviews` (`reviewMode: "practice"`, `metadata.source: "mixed-test"`). `400` for a bad `size`.
+
+### `GET /api/concepts/:id/prerequisites`
+`200` `{ available: false, unavailableReason }` for a concept not made from a defined term, otherwise `{ available: true, focus, struggling, prerequisites: [{ termId, term, conceptId, predictedRecall, lapseCount, reviewed, needsCheck, reason }], dependents, questions }` where `questions` has one generated probe per tracked prerequisite that needs a check. `404` for an unknown concept.
+
+### `GET /api/exams` · `POST /api/exams` · `DELETE /api/exams/:id`
+`POST { subject, name, examDate: "YYYY-MM-DD" }` → `201` the exam with `daysLeft`; `400` for a malformed date. `DELETE` → `204`.
+
+### `GET /api/exams/:id/plan`
+`200` `{ exam, plan: { examDate, daysLeft, status, coverage: { topicsTotal, topicsCovered, percent }, topics: [{ key, sectionId, sourceTitle, concepts, meanRecallAtExam, risk, covered }], days: [{ date, daysToExam, tasks: [{ kind: "learn"|"review"|"mock", topic?, note }], estimatedReviews, overloaded }], warnings } }`. The syllabus is the sections of the user's sources for the exam's subject. `404` for an unknown exam.
 
 ## Queue, forecasts, dashboard
 

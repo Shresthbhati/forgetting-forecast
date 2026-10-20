@@ -1,4 +1,4 @@
-import { locationFromRange } from './location.ts';
+import { formatTimestamp, locationFromRange } from './location.ts';
 import type { RawUnit, Section, SourceKind } from './types.ts';
 
 export const MIN_SECTION_CHARS = 200;
@@ -123,6 +123,47 @@ function mergeTiny(drafts: Draft[]): Draft[] {
   return out;
 }
 
+const TRANSCRIPT_TARGET_CHARS = 1500;
+
+/**
+ * Transcripts have no headings, so sections are consecutive time windows of roughly TRANSCRIPT_TARGET_CHARS, headed by
+ * their time range ("2:00–4:10") and located by seconds. A short trailing window is folded into the previous section.
+ */
+export function segmentTranscript(units: RawUnit[]): Section[] {
+  type Group = { start: number; end: number; texts: string[]; chars: number };
+  const groups: Group[] = [];
+  let current: Group | null = null;
+  for (const u of units) {
+    const text = u.text.trim();
+    if (!text) continue;
+    const start = u.startSec ?? 0;
+    const end = u.endSec ?? start;
+    if (!current) current = { start, end, texts: [], chars: 0 };
+    current.texts.push(text);
+    current.chars += text.length + 1;
+    current.end = Math.max(current.end, end);
+    if (current.chars >= TRANSCRIPT_TARGET_CHARS) {
+      groups.push(current);
+      current = null;
+    }
+  }
+  if (current) {
+    const prev = groups[groups.length - 1];
+    if (prev && current.chars < MIN_SECTION_CHARS) {
+      prev.texts.push(...current.texts);
+      prev.chars += current.chars;
+      prev.end = Math.max(prev.end, current.end);
+    } else groups.push(current);
+  }
+  return groups.map((g, ordinal) => ({
+    ordinal,
+    level: 1,
+    heading: `${formatTimestamp(g.start)}–${formatTimestamp(g.end)}`,
+    text: g.texts.join(' '),
+    location: { tStart: g.start, tEnd: g.end },
+  }));
+}
+
 /**
  * Turns normalized pages/slides into an outline of sections.
  * - Slides: one section per slide, headed by its title; tiny consecutive slides are merged.
@@ -131,6 +172,7 @@ function mergeTiny(drafts: Draft[]): Draft[] {
  * Every section records the page/slide range it spans.
  */
 export function segmentUnits(units: RawUnit[], kind: SourceKind, fallbackHeading: string): Section[] {
+  if (kind === 'youtube') return segmentTranscript(units);
   const drafts: Draft[] = [];
 
   if (kind === 'pptx') {

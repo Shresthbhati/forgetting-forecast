@@ -5,12 +5,14 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart2,
   BookOpen,
+  CalendarDays,
   ChevronLeft,
   FileText,
   FlaskConical,
   History,
   LayoutDashboard,
   MoreHorizontal,
+  Shuffle,
   Settings,
   Target,
   type LucideIcon,
@@ -26,12 +28,14 @@ export interface NavItem {
   badge?: 'due';
 }
 
-/** Order: Dashboard, Review, Library, Sources, Analytics, History, Model Lab, Settings. */
+/** Order: Dashboard, Review, Mixed test, Library, Sources, Exams, Analytics, History, Model Lab, Settings. */
 export const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/review', label: 'Review', icon: Target, badge: 'due' },
+  { href: '/test', label: 'Mixed test', icon: Shuffle },
   { href: '/library', label: 'Library', icon: BookOpen },
   { href: '/sources', label: 'Sources', icon: FileText },
+  { href: '/exams', label: 'Exams', icon: CalendarDays },
   { href: '/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/history', label: 'History', icon: History },
   { href: '/model', label: 'Model Lab', icon: FlaskConical },

@@ -21,6 +21,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { ForecastCurve } from '@/components/charts';
+import { PrerequisitePanel } from '@/components/PrerequisitePanel';
 
 const DIFFICULTY_OPTIONS = [1, 2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} — ${['very easy', 'easy', 'medium', 'hard', 'very hard'][n - 1]}` }));
 
@@ -201,7 +202,7 @@ export default function ConceptDetailPage() {
             lastReviewedAt={recallState.lastReviewedAt ? new Date(recallState.lastReviewedAt).getTime() : null}
             attempts={[...attempts].reverse().map(a => ({ at: new Date(a.answeredAt).getTime(), predicted: a.predictedRecallProbability, correct: a.actualCorrectness }))}
             now={now}
-            targetRecall={0.8}
+            targetRecall={detail.targetRecall ?? 0.8}
             title={concept.prompt.slice(0, 60)}
           />
           <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4 text-center">
@@ -256,6 +257,8 @@ export default function ConceptDetailPage() {
           ) : (
             concept.sourceReference
           )}
+
+      {concept.sourceId && <PrerequisitePanel conceptId={concept.id} />}
         </p>
       )}
 

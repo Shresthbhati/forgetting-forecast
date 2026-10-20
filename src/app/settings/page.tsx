@@ -199,7 +199,7 @@ export default function SettingsPage() {
               <output htmlFor="target" className="font-mono text-sm text-cyan">{targetRecall}%</output>
             </label>
             <input id="target" type="range" min={50} max={99} value={targetRecall} onChange={e => setTargetRecall(Number(e.target.value))} className="h-2 w-full cursor-pointer accent-magenta" />
-            <p className="mt-1.5 text-xs text-ink-dim">Saved to your profile. The scheduler currently plans around 80%; this value is stored for upcoming scheduling controls.</p>
+            <p className="mt-1.5 text-xs text-ink-dim">Saved to your profile. The scheduler times each next review for the moment predicted recall falls to this value (applied from your next review of each concept), and “Review soon” / “Strong” labels use it too. Higher means more frequent reviews.</p>
           </div>
           <div className="flex justify-end"><Button type="submit" loading={savingStudy}>Save preferences</Button></div>
         </form>

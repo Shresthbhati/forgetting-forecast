@@ -261,6 +261,40 @@ async function main() {
     check('storage: the bucket is private (public URL does not serve the file)', !publicUrl.ok, `${publicUrl.status}`);
     await B.client.storage.from('sources').remove([srcPath]);
 
+    // ---- exams and source groups (migrations 008, 009) ----
+    console.log('\nexams and source groups');
+    const examId = randomUUID();
+    const examIns = await B.client.from('exams').insert({ id: examId, user_id: B.id, subject: 'RLS', name: 'secret exam', exam_date: '2099-01-01' });
+    if (examIns.error) throw new Error(`B exam insert failed: ${examIns.error.message}`);
+    const groupId = randomUUID();
+    const groupIns = await B.client.from('source_groups').insert({ id: groupId, user_id: B.id, title: 'secret playlist' });
+    if (groupIns.error) throw new Error(`B source_groups insert failed: ${groupIns.error.message}`);
+    for (const table of ['exams', 'source_groups']) {
+      const all = await A.client.from(table).select('*');
+      check(`${table}: A cannot read B's rows`, !all.error && rows(all) === 0, all.error?.message);
+      const anonRows = await anon.from(table).select('*');
+      check(`${table}: anon select returns nothing`, rows(anonRows) === 0);
+    }
+    await A.client.from('exams').update({ name: 'hacked' }).eq('id', examId);
+    const examAfter = await admin.from('exams').select('name').eq('id', examId).single();
+    check('exams: update of B\'s row has no effect', examAfter.data?.name === 'secret exam');
+    await A.client.from('exams').delete().eq('id', examId);
+    await A.client.from('source_groups').delete().eq('id', groupId);
+    check('exams: A cannot delete B\'s exam', rows(await admin.from('exams').select('id').eq('id', examId)) === 1);
+    check('source_groups: A cannot delete B\'s group', rows(await admin.from('source_groups').select('id').eq('id', groupId)) === 1);
+    const plantedExam = await A.client.from('exams').insert({ user_id: B.id, subject: 'x', name: 'x', exam_date: '2099-01-01' });
+    check('exams: A cannot create an exam for B', plantedExam.error !== null);
+    const intoBGroup = await A.client.from('sources').insert({
+      user_id: A.id, subject: 'x', title: 'x', kind: 'youtube', storage_path: 'youtube:abcdefghijk', byte_size: 0,
+      sha256: randomUUID().replace(/-/g, '').padEnd(64, '0'), group_id: groupId,
+    });
+    check('sources: A cannot place a source in B\'s group', intoBGroup.error !== null);
+    const ownYoutube = await A.client.from('sources').insert({
+      user_id: A.id, subject: 'x', title: 'a video', kind: 'youtube', storage_path: 'youtube:abcdefghijk', byte_size: 0,
+      sha256: randomUUID().replace(/-/g, '').padEnd(64, '0'), source_url: 'https://www.youtube.com/watch?v=abcdefghijk',
+    });
+    check('sources: the youtube kind is accepted for one\'s own source', ownYoutube.error === null, ownYoutube.error?.message);
+
     // ---- is_demo cannot be self-assigned ----
     console.log('\nprofile flags');
     await A.client.from('profiles').update({ is_demo: true }).eq('id', A.id);

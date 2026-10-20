@@ -281,9 +281,77 @@ const queueWithSource = await call('GET', '/api/review-queue?mode=practice&maxIt
 check('the review queue carries the source reference for source concepts',
   queueWithSource.json.items.some((i: any) => i.concept.id === madeConcept.id && /api-test-notes/.test(i.concept.sourceReference ?? '')));
 
+// ---- section quiz + mastery (phase 2) ----
+console.log('\nquiz and mastery');
+const quizSection: string = normalization.sectionId;
+const quiz = await call('GET', `/api/sources/${sourceId}/quiz?sectionId=${quizSection}&seed=7`);
+check('GET /api/sources/:id/quiz -> generated questions with labels and concept ids',
+  quiz.status === 200 && quiz.json.questions.length >= 1 && quiz.json.questions.every((q: any) => /^Generated from/.test(q.label) && q.id && q.prompt && (q.practiceOnly || q.conceptId)),
+  JSON.stringify(quiz.json).slice(0, 300));
+check('the quiz only asks about terms that are concepts', quiz.json.questions.filter((q: any) => !q.practiceOnly).every((q: any) => q.conceptId === madeConcept.id) && quiz.json.termsWithoutConcept >= 0);
+const quizAgain = await call('GET', `/api/sources/${sourceId}/quiz?sectionId=${quizSection}&seed=7`);
+check('the same seed gives the same quiz', JSON.stringify(quizAgain.json.questions.map((q: any) => q.id)) === JSON.stringify(quiz.json.questions.map((q: any) => q.id)));
+check('GET quiz without a sectionId -> 400', (await call('GET', `/api/sources/${sourceId}/quiz`)).status === 400);
+check('GET quiz for an unknown section -> 404', (await call('GET', `/api/sources/${sourceId}/quiz?sectionId=${randomUUID()}`)).status === 404);
+check('GET quiz for an unknown source -> 404', (await call('GET', `/api/sources/${randomUUID()}/quiz?sectionId=${quizSection}`)).status === 404);
+const asked = quiz.json.questions.find((q: any) => !q.practiceOnly);
+if (asked) {
+  const quizReview = await call('POST', '/api/reviews', {
+    conceptId: asked.conceptId, clientRequestId: randomUUID(), actualCorrectness: true, responseLatencyMs: 4000, reviewMode: 'practice',
+    metadata: { source: 'quiz', generated: true, questionType: asked.type, questionId: asked.id, grading: 'exact', autoVerdict: true, overridden: false },
+  });
+  check('a quiz answer is recorded as an attempt with its question type in the metadata', quizReview.status === 201, JSON.stringify(quizReview.json).slice(0, 200));
+}
+const mastery = await call('GET', `/api/sources/${sourceId}/mastery`);
+check('GET /api/sources/:id/mastery -> per-topic rows; fewer than 5 answers gives null, not a made-up figure',
+  mastery.status === 200 && Array.isArray(mastery.json.topics) && mastery.json.topics.length >= 1 &&
+  mastery.json.topics.every((t: any) => t.attempts < 5 ? t.mastery === null && t.insufficientData === true : typeof t.mastery === 'number'),
+  JSON.stringify(mastery.json).slice(0, 300));
+check('GET /api/sources/:id/mastery for an unknown source -> 404', (await call('GET', `/api/sources/${randomUUID()}/mastery`)).status === 404);
+
 for (const c of [madeConcept, passage.json.created[0]]) if (c) await call('DELETE', `/api/concepts/${c.id}`);
 check('DELETE /api/sources/:id -> 204', (await call('DELETE', `/api/sources/${sourceId}`)).status === 204);
 check('deleted source -> 404', (await call('GET', `/api/sources/${sourceId}`)).status === 404);
+
+// ---- rollup, mixed test, prerequisites (phases 3-5) ----
+console.log('\nrollup, mixed test, exams');
+const rollupRes = await call('GET', '/api/rollup');
+check('GET /api/rollup -> subjects with topics, mean recall and at-risk counts',
+  rollupRes.status === 200 && typeof rollupRes.json.targetRecall === 'number' && rollupRes.json.subjects.length > 0 &&
+  rollupRes.json.subjects.every((s: any) => s.concepts > 0 && s.meanRecall >= 0 && s.meanRecall <= 1 && Array.isArray(s.topics)),
+  JSON.stringify(rollupRes.json).slice(0, 300));
+const mixedRes = await call('GET', '/api/mixed-test?size=5&seed=3');
+check('GET /api/mixed-test -> up to 5 items, each labelled with its subject',
+  mixedRes.status === 200 && mixedRes.json.questions.length > 0 && mixedRes.json.questions.length <= 5 &&
+  mixedRes.json.questions.every((q: any) => typeof q.subject === 'string' && typeof q.prompt === 'string'),
+  JSON.stringify(mixedRes.json).slice(0, 300));
+const mixedSame = await call('GET', '/api/mixed-test?size=5&seed=3');
+check('the same seed gives the same mixed test', JSON.stringify(mixedSame.json.questions.map((q: any) => q.id)) === JSON.stringify(mixedRes.json.questions.map((q: any) => q.id)));
+check('GET /api/mixed-test rejects size 500 (400)', (await call('GET', '/api/mixed-test?size=500')).status === 400);
+const protoConcept = (await call('GET', '/api/concepts')).json.concepts[0];
+const proto = await call('GET', `/api/concepts/${protoConcept.id}/prerequisites`);
+check('GET /api/concepts/:id/prerequisites for a hand-typed concept -> available: false with a reason',
+  proto.status === 200 && proto.json.available === false && typeof proto.json.unavailableReason === 'string', JSON.stringify(proto.json).slice(0, 200));
+check('GET /api/concepts/:id/prerequisites for an unknown concept -> 404', (await call('GET', `/api/concepts/${randomUUID()}/prerequisites`)).status === 404);
+
+const examDate = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+const examCreated = await call('POST', '/api/exams', { subject: 'API test', name: 'API exam', examDate });
+check('POST /api/exams -> 201 with daysLeft', examCreated.status === 201 && typeof examCreated.json.id === 'string' && examCreated.json.daysLeft >= 9, JSON.stringify(examCreated.json).slice(0, 200));
+check('POST /api/exams rejects a malformed date (400)', (await call('POST', '/api/exams', { subject: 'x', name: 'x', examDate: '10/10/2030' })).status === 400);
+check('GET /api/exams lists it', (await call('GET', '/api/exams')).json.exams.some((e: any) => e.id === examCreated.json.id));
+const planRes = await call('GET', `/api/exams/${examCreated.json.id}/plan`);
+check('GET /api/exams/:id/plan -> coverage, topics and a day-by-day plan ending with a mock test',
+  planRes.status === 200 && planRes.json.plan.days.length >= 1 && planRes.json.plan.coverage && Array.isArray(planRes.json.plan.topics) &&
+  planRes.json.plan.days.at(-1).tasks.some((t: any) => t.kind === 'mock'), JSON.stringify(planRes.json).slice(0, 300));
+check('GET /api/exams/:id/plan for an unknown id -> 404', (await call('GET', `/api/exams/${randomUUID()}/plan`)).status === 404);
+check('DELETE /api/exams/:id -> 204', (await call('DELETE', `/api/exams/${examCreated.json.id}`)).status === 204);
+
+// YouTube: validation only here (the live fetch needs the public internet and YouTube's current page format)
+check('POST /api/sources/youtube with a non-YouTube link -> 400', (await call('POST', '/api/sources/youtube', { url: 'https://example.com/watch?v=abcdefghijk', subject: 'API test' })).status === 400);
+check('POST /api/sources/youtube without a subject -> 400', (await call('POST', '/api/sources/youtube', { url: 'https://www.youtube.com/watch?v=abcdefghijk' })).status === 400);
+check('signed-out POST /api/sources/youtube -> 401', (await call('POST', '/api/sources/youtube', { url: 'https://youtu.be/abcdefghijk', subject: 'x' }, false)).status === 401);
+const groupsList = await call('GET', '/api/sources');
+check('GET /api/sources also returns playlist groups (an array)', groupsList.status === 200 && Array.isArray(groupsList.json.groups));
 
 // ---- export ----
 console.log('\nexport');

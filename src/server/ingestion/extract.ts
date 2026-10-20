@@ -10,6 +10,7 @@
 import { extractText, getDocumentProxy } from 'unpdf';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
+import { decodeEntities } from '../../domain/ingestion/entities.ts';
 import { MAX_UNITS, type RawUnit, type SourceKind } from '../../domain/ingestion/types.ts';
 
 export const MAX_TOTAL_CHARS = 3_000_000;
@@ -45,6 +46,7 @@ async function extractByKind(kind: SourceKind, bytes: Uint8Array): Promise<RawUn
     case 'docx': return extractDocx(bytes);
     case 'pptx': return extractPptx(bytes);
     case 'text': return extractPlainText(bytes);
+    case 'youtube': throw new ExtractionError('YouTube sources are imported from a link, not a file');
   }
 }
 
@@ -78,18 +80,6 @@ async function openZip(bytes: Uint8Array, label: string): Promise<JSZip> {
     throw new ExtractionError(`This ${label} file is too large to process`);
   }
   return zip;
-}
-
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-
-function decodeEntities(s: string): string {
-  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, body: string) => {
-    if (body[0] === '#') {
-      const code = body[1].toLowerCase() === 'x' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
-      return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : match;
-    }
-    return ENTITIES[body.toLowerCase()] ?? match;
-  });
 }
 
 async function extractDocx(bytes: Uint8Array): Promise<RawUnit[]> {

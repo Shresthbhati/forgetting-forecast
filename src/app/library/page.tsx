@@ -48,6 +48,7 @@ function LibraryContent() {
   const toast = useToast();
 
   const [concepts, setConcepts] = useState<ApiConcept[] | null>(null);
+  const [target, setTarget] = useState(0.8);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('q') ?? '');
   const [subject, setSubject] = useState('');
@@ -72,6 +73,7 @@ function LibraryContent() {
 
   useEffect(() => {
     load();
+    api.me.get().then(me => setTarget(me.targetRecall)).catch(() => undefined);
   }, [load]);
 
   const rows = useMemo(() => {
@@ -80,11 +82,11 @@ function LibraryContent() {
       .filter(c => !subject || c.subject === subject)
       .filter(c => !q || c.prompt.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q) || (c.topic ?? '').toLowerCase().includes(q))
       .map(c => {
-        const f = c.recallState ? generateForecast({ concept: c, recallState: c.recallState, at: new Date() }) : null;
+        const f = c.recallState ? generateForecast({ concept: c, recallState: c.recallState, at: new Date(), targetRecall: target }) : null;
         return { concept: c, forecast: f };
       })
       .sort((a, b) => (a.forecast?.probability ?? 1) - (b.forecast?.probability ?? 1));
-  }, [concepts, search, subject]);
+  }, [concepts, search, subject, target]);
 
   const subjects = useMemo(() => [...new Set((concepts ?? []).map(c => c.subject))].sort(), [concepts]);
 
