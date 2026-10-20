@@ -1,0 +1,173 @@
+/**
+ * Client-side API utilities
+ * Use these functions in React components to call the backend API.
+ * Errors thrown here carry the server's message and `code` (see ApiRequestError).
+ */
+
+import type {
+  ConceptDetail,
+  ForecastLogEntry,
+  Me,
+  ReviewHistoryPage,
+} from '@/types';
+
+const API_BASE = '';
+
+/** Thrown for any non-2xx response; `status` and `code` come from the server's standard error shape. */
+export class ApiRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: { message: 'Request failed' } }));
+    throw new ApiRequestError(error.error?.message ?? `HTTP ${response.status}`, response.status, error.error?.code);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json();
+}
+
+export const api = {
+  // Health
+  health: () => apiRequest<{ status: string; checks: Record<string, string> }>('/api/health'),
+
+  // Dashboard
+  dashboard: () => apiRequest<{
+    totalActiveConcepts: number;
+    dueConcepts: number;
+    reviewsCompletedToday: number;
+    reviewsCompletedThisWeek: number;
+    meanEstimatedRecall: number;
+    nextRecommendedReviews: Array<{
+      concept: any;
+      forecast: any;
+      recallState: any;
+    }>;
+    recentActivity: any[];
+  }>('/api/dashboard'),
+
+  // Concepts
+  concepts: {
+    list: (params?: { subject?: string; includeArchived?: boolean; page?: number; pageSize?: number }) => {
+      const search = new URLSearchParams();
+      if (params?.subject) search.set('subject', params.subject);
+      if (params?.includeArchived) search.set('includeArchived', 'true');
+      if (params?.page) search.set('page', String(params.page));
+      if (params?.pageSize) search.set('pageSize', String(params.pageSize));
+      return apiRequest<{ concepts: any[]; page: number; pageSize: number }>(`/api/concepts?${search}`);
+    },
+    create: (input: {
+      subject: string;
+      topic?: string;
+      prompt: string;
+      answer: string;
+      explanation?: string;
+      difficulty: number;
+      tags?: string[];
+      sourceReference?: string;
+    }) => apiRequest<any>('/api/concepts', { method: 'POST', body: JSON.stringify(input) }),
+    get: (id: string) => apiRequest<any>(`/api/concepts/${id}`),
+    detail: (id: string) => apiRequest<ConceptDetail>(`/api/concepts/${id}/detail`),
+    update: (id: string, input: Partial<any>) => apiRequest<any>(`/api/concepts/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+    delete: (id: string) => apiRequest<void>(`/api/concepts/${id}`, { method: 'DELETE' }),
+  },
+
+  // Review queue
+  reviewQueue: (params?: {
+    mode?: 'due' | 'practice' | 'experiment';
+    subject?: string;
+    maxItems?: number;
+  }) => {
+    const search = new URLSearchParams();
+    if (params?.mode) search.set('mode', params.mode);
+    if (params?.subject) search.set('subject', params.subject);
+    if (params?.maxItems) search.set('maxItems', String(params.maxItems));
+    return apiRequest<{ items: any[] }>(`/api/review-queue?${search}`);
+  },
+
+  // Reviews
+  reviews: {
+    submit: (input: {
+      conceptId: string;
+      sessionId?: string | null;
+      /** Idempotency key: retry with the same id and the server returns the original attempt (duplicate: true). */
+      clientRequestId?: string;
+      actualCorrectness: boolean;
+      /** 1-5 rating from the UI; the server converts it to the stored 0-1 value. */
+      confidenceLevel?: number | null;
+      /** Legacy 0-1 value; ignored when confidenceLevel is set. */
+      selfReportedConfidence?: number | null;
+      responseLatencyMs: number;
+      reviewMode: 'due' | 'practice' | 'experiment';
+      metadata?: Record<string, unknown>;
+    }) => apiRequest<any>('/api/reviews', { method: 'POST', body: JSON.stringify(input) }),
+    list: (params?: {
+      conceptId?: string;
+      result?: 'correct' | 'incorrect';
+      from?: string;
+      to?: string;
+      page?: number;
+      pageSize?: number;
+    }) => {
+      const search = new URLSearchParams();
+      Object.entries(params ?? {}).forEach(([k, v]) => v !== undefined && search.set(k, String(v)));
+      return apiRequest<ReviewHistoryPage>(`/api/reviews?${search}`);
+    },
+  },
+
+  // Study sessions (counts are computed server-side)
+  sessions: {
+    start: (mode: 'due' | 'practice' | 'experiment' = 'due') =>
+      apiRequest<{ sessionId: string }>('/api/sessions', { method: 'POST', body: JSON.stringify({ mode }) }),
+    finish: (id: string, status: 'completed' | 'abandoned') =>
+      apiRequest<{ id: string; status: string; conceptCount: number; summary: Record<string, unknown> | null }>(
+        `/api/sessions/${id}`,
+        { method: 'PATCH', body: JSON.stringify({ status }) }
+      ),
+  },
+
+  // Account
+  me: {
+    get: () => apiRequest<Me>('/api/me'),
+    update: (input: { displayName?: string | null; preferredTimezone?: string; dailyGoal?: number; targetRecall?: number }) =>
+      apiRequest<Me>('/api/me', { method: 'PATCH', body: JSON.stringify(input) }),
+    exportUrl: '/api/me/export',
+    delete: () => apiRequest<void>('/api/me', { method: 'DELETE', body: JSON.stringify({ confirm: 'DELETE' }) }),
+  },
+
+  // Forecasts
+  forecasts: {
+    get: (conceptId: string, horizonsHours?: number[]) => {
+      const search = new URLSearchParams();
+      if (horizonsHours) search.set('horizonsHours', horizonsHours.join(','));
+      return apiRequest<any>(`/api/forecasts/${conceptId}?${search}`);
+    },
+    log: (conceptId: string) => apiRequest<{ forecasts: ForecastLogEntry[] }>(`/api/forecasts/${conceptId}/log`),
+  },
+
+  // Analytics
+  analytics: (params?: { since?: string; until?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.since) search.set('since', params.since);
+    if (params?.until) search.set('until', params.until);
+    return apiRequest<any>(`/api/analytics?${search}`);
+  },
+};

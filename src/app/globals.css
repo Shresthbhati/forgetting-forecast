@@ -1,0 +1,308 @@
+@import "tailwindcss";
+
+/*
+ * Forgetting Forecast: synthwave theme (see docs/REDESIGN_PLAN.md section 1).
+ * The existing components use brand-* / neutral-* / success-* / warning-* / danger-* / info-* utilities.
+ * Mapping them here re-themes the whole app at once. `neutral` is an INVERTED ramp (50 = darkest background,
+ * 900 = primary text), which turns every existing bg-neutral-50 / text-neutral-900 into dark mode.
+ */
+
+@theme inline {
+  --font-display: var(--font-orbitron), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-chakra), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@theme {
+  /* Named palette */
+  --color-void: #07040f;
+  --color-night: #0f0826;
+  --color-panel: #170d33;
+  --color-panel-hi: #22154a;
+  --color-line: #3a2a6e;
+  --color-ink: #f1ecff;
+  --color-ink-dim: #a99fd6;
+  --color-magenta: #ff2bd6;
+  --color-cyan: #22e4ff;
+  --color-sunset: #ff8a3d;
+  --color-sun: #ffe14d;
+  --color-violet: #8b5cf6;
+  --color-strong: #39ffb0;
+  --color-watch: #ffd23f;
+  --color-due: #ff3d7f;
+
+  /* brand = magenta. 50/100 are dark tints for chips; 700+ are light tints for text on those chips. */
+  --color-brand-50: #2a0b2d;
+  --color-brand-100: #3b0f40;
+  --color-brand-200: #5a1660;
+  --color-brand-300: #ff9be9;
+  --color-brand-400: #ff6fe3;
+  --color-brand-500: #ff4fdc;
+  --color-brand-600: #ff2bd6;
+  --color-brand-700: #ff7ae6;
+  --color-brand-800: #ff9eee;
+  --color-brand-900: #ffc2f4;
+  --color-brand-950: #ffe1fa;
+
+  /* neutral: inverted dark ramp */
+  --color-neutral-50: #0f0826;
+  --color-neutral-100: #170d33;
+  --color-neutral-200: #22154a;
+  --color-neutral-300: #3a2a6e;
+  --color-neutral-400: #8b80c4;
+  --color-neutral-500: #a99fd6;
+  --color-neutral-600: #c4bce8;
+  --color-neutral-700: #ddd7f5;
+  --color-neutral-800: #ebe7fb;
+  --color-neutral-900: #f1ecff;
+  --color-neutral-950: #ffffff;
+
+  /* success = strong (mint) */
+  --color-success-50: #062a1c;
+  --color-success-100: #0a3d2a;
+  --color-success-200: #14663f;
+  --color-success-500: #39ffb0;
+  --color-success-600: #39ffb0;
+  --color-success-700: #6bffc6;
+  --color-success-800: #9affd8;
+
+  /* warning = watch (amber) */
+  --color-warning-50: #2e2406;
+  --color-warning-100: #43330a;
+  --color-warning-200: #6b5210;
+  --color-warning-500: #ffd23f;
+  --color-warning-600: #ffd23f;
+  --color-warning-700: #ffe07a;
+  --color-warning-800: #ffeaa3;
+
+  /* danger = due (hot pink-red) */
+  --color-danger-50: #2f0a18;
+  --color-danger-100: #45101f;
+  --color-danger-200: #7a1a38;
+  --color-danger-500: #ff3d7f;
+  --color-danger-600: #ff5c93;
+  --color-danger-700: #ff85ad;
+  --color-danger-800: #ffadc7;
+
+  /* info = cyan */
+  --color-info-50: #04212b;
+  --color-info-100: #073444;
+  --color-info-200: #0d5a70;
+  --color-info-500: #22e4ff;
+  --color-info-600: #22e4ff;
+  --color-info-700: #6aeeff;
+  --color-info-800: #9ff3ff;
+}
+
+:root {
+  --layout-sidebar-width: 260px;
+  --layout-sidebar-collapsed-width: 76px;
+  --layout-header-height: 64px;
+  --layout-max-content-width: 1280px;
+
+  /* Forecast status colours referenced directly by components */
+  --color-status-strong: #39ffb0;
+  --color-status-review-soon: #ffd23f;
+  --color-status-due-now: #ff3d7f;
+
+  --glow-magenta: 0 0 8px #ff2bd6aa, 0 0 24px #ff2bd655;
+  --glow-cyan: 0 0 8px #22e4ffaa, 0 0 24px #22e4ff55;
+  --gradient-sunset: linear-gradient(180deg, #ffe14d 0%, #ff8a3d 40%, #ff2bd6 75%, #8b5cf6 100%);
+  --gradient-chrome: linear-gradient(180deg, #ffffff 0%, #c9c3ff 45%, #5b4aa8 50%, #e8e4ff 55%, #ffffff 100%);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-void);
+  }
+
+  body {
+    min-height: 100vh;
+    background: var(--color-night);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* CRT scanlines: a faint full-screen overlay, switchable in Settings (html[data-scanlines="off"]). */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 3px);
+  }
+  html[data-scanlines='off'] body::after {
+    display: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-cyan);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(255 43 214 / 0.4);
+    color: #fff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-night);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 9999px;
+  }
+}
+
+/* ---------- Signature elements ---------- */
+
+@utility container {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--layout-max-content-width);
+  padding-inline: 1rem;
+  @media (min-width: 768px) {
+    padding-inline: 1.5rem;
+  }
+  @media (min-width: 1024px) {
+    padding-inline: 2rem;
+  }
+}
+
+/* Chrome Y2K heading text */
+@utility text-chrome {
+  background: var(--gradient-chrome);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility glow-magenta {
+  box-shadow: var(--glow-magenta);
+}
+@utility glow-cyan {
+  box-shadow: var(--glow-cyan);
+}
+@utility text-glow-magenta {
+  text-shadow: 0 0 8px #ff2bd6aa, 0 0 22px #ff2bd655;
+}
+@utility text-glow-cyan {
+  text-shadow: 0 0 8px #22e4ffaa, 0 0 22px #22e4ff55;
+}
+@utility bg-sunset {
+  background-image: var(--gradient-sunset);
+}
+
+/* Perspective grid floor: fixed to the bottom 45% of the viewport, fading into the horizon. */
+.synth-grid {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  height: 45vh;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to top, #000 25%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 25%, transparent 100%);
+}
+.synth-grid::before {
+  content: '';
+  position: absolute;
+  inset-inline: -60%;
+  top: 0;
+  bottom: -80%;
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(600px) rotateX(62deg);
+  transform-origin: center top;
+  animation: grid-scroll 7s linear infinite;
+}
+@keyframes grid-scroll {
+  to {
+    background-position: 0 64px;
+  }
+}
+
+/* Faint glow line at the horizon above the grid */
+.synth-horizon {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 45vh;
+  height: 1px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, #ff2bd6aa, #22e4ffaa, transparent);
+  box-shadow: 0 0 24px 2px #ff2bd633;
+}
+
+/* Striped "venetian" sun: sunset gradient with horizontal gaps cut out of the lower half */
+.sunset-sun {
+  --sun-stripes: linear-gradient(
+    180deg,
+    #000 0%, #000 52%, transparent 52%, transparent 55%,
+    #000 55%, #000 62%, transparent 62%, transparent 66%,
+    #000 66%, #000 73%, transparent 73%, transparent 78%,
+    #000 78%, #000 84%, transparent 84%, transparent 90%,
+    #000 90%
+  );
+  background-image: var(--gradient-sunset);
+  border-radius: 9999px;
+  -webkit-mask-image: var(--sun-stripes);
+  mask-image: var(--sun-stripes);
+  filter: drop-shadow(0 0 28px #ff2bd666);
+}
+
+/* Shimmer for skeletons */
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes draw-in {
+  from {
+    stroke-dashoffset: var(--path-length, 1000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---------- Reduced motion: no grid scroll, no draw-in, no shimmer ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .synth-grid::before { animation: none; }
+}
+html[data-reduce-motion='on'] *, html[data-reduce-motion='on'] *::before, html[data-reduce-motion='on'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+html[data-reduce-motion='on'] .synth-grid::before { animation: none; }
