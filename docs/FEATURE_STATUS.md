@@ -8,7 +8,7 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 | Area | Status | Notes |
 |---|---|---|
-| Schema + RLS (7 tables) | ✅ | `supabase/migrations/001`–`006`; `npm run test:rls` asserts isolation (37 checks) |
+| Schema + RLS (10 tables) | ✅ | `supabase/migrations/001`–`007`; `npm run test:rls` asserts isolation (37 checks + the sources checks added with 007) |
 | Cross-user RPC leak | ✅ fixed | `002`: `SECURITY INVOKER`, `auth.uid()`, `anon` revoked; the old `p_user_id` signatures no longer exist |
 | Open redirect in `/auth/callback` | ✅ fixed | `src/lib/safeNextPath.ts` + unit tests |
 | Session refresh + signed-out redirect | ✅ | `src/middleware.ts` |
@@ -23,6 +23,10 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | Account: settings / export / delete | ✅ | demo account protected; service-role client is server-only (`import 'server-only'`) |
 | Demo account + replayed seed | ✅ | `npm run db:seed`, `npm run db:reset-demo`; history is simulated and labelled as such |
 | Uniform error shape + request ids | ✅ | every route uses `createApiHandler` |
+| Source upload + extraction | ✅ | PDF / PPTX / DOCX / TXT / MD; page & slide numbers survive extraction (tested with generated files); scanned PDFs fail with "No text layer — OCR not supported yet" |
+| Outline, key terms, definitions | 🟡 | rule-based (no LLM): pattern matching, so misses and false positives are expected; each term shows its source sentence |
+| Sources API + atomic ingest | ✅ | `POST/GET /api/sources`, `GET/DELETE /api/sources/:id`, `POST /api/sources/:id/concepts`; `ingest_source_tx` writes sections + terms + status in one transaction |
+| Source storage isolation | ✅ | private bucket, `{user_id}/` folders; export includes sources, deletion removes files |
 | Write rate limit | 🟡 | in-memory per instance (60/min/user/scope); move to Redis/Upstash for multi-instance |
 | Scheduler uses `target_recall` | ⬜ | stored on the profile; the engine plans around a fixed 80% |
 | Reads paginated past 1,000 rows | 🟡 | PostgREST caps responses at 1,000 rows; analytics and the stats query note this limit |
@@ -35,6 +39,7 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | `/auth/*` | ✅ | restyled; `callbackUrl` sanitised to same-site paths |
 | `/` dashboard | ✅ | next action, 4 tiles (`ESTIMATE` / `OBSERVED`), curve, queue with real "why", upcoming risk |
 | `/review` | ✅ | keyboard-first, pause stops the latency timer, idempotent retry, "NOT SAVED" path, session summary |
+| `/sources`, `/sources/[id]` | ✅ | upload with progress, status pills, outline + reader, terms with Add as concept / Add all; checked at 375px and desktop |
 | `/library` | ✅ | search, subject filter, add/delete dialogs, recall rings |
 | `/concepts/[id]` | ✅ | forecast curve, real scheduler factors, attempts, forecast log, edit/delete |
 | `/analytics` | ✅ | every number shows n; baseline result reported even when the model loses |
@@ -50,7 +55,7 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 - The half-life model is heuristic and unvalidated. On the shipped demo seed it **does not** beat the "your past accuracy" baseline; the Analytics page reports that.
 - Demo data is simulated; its calibration shows the pipeline works, not that the model predicts real people.
-- Not built: FSRS, offline mode, data import, e2e browser tests, Lighthouse CI.
+- Not built: FSRS, offline mode, OCR, YouTube, cloze / multiple-choice / true-false generation (phases 2+ of `docs/VISION_PLAN.md`), e2e browser tests in CI, Lighthouse CI.
 
 ## Contrast (computed WCAG ratios on `night` / `panel` / `panel-hi`)
 

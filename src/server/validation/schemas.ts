@@ -111,6 +111,33 @@ export const analyticsParamsSchema = z.object({
   until: z.string().datetime().optional(),
 });
 
+// Uploaded sources
+export const sourceIdParamSchema = z.object({ id: uuidSchema });
+
+export const uploadSourceFieldsSchema = z.object({
+  subject: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(300).optional(),
+});
+
+/** Concepts made from a source: detected terms (definition recall) or a passage the user phrased themselves. */
+export const createConceptsFromSourceSchema = z.object({
+  items: z
+    .array(
+      z.discriminatedUnion('type', [
+        z.object({ type: z.literal('term'), termId: uuidSchema }),
+        z.object({
+          type: z.literal('passage'),
+          sectionId: uuidSchema,
+          prompt: z.string().trim().min(1).max(5000),
+          answer: z.string().trim().min(1).max(5000),
+        }),
+      ])
+    )
+    .min(1)
+    .max(100),
+  difficulty: z.number().int().min(1).max(5).default(3),
+});
+
 // Type inference helpers
 export type PaginationParams = z.infer<typeof paginationSchema>;
 export type CreateConceptInput = z.infer<typeof createConceptSchema>;
@@ -122,6 +149,7 @@ export type ForecastParams = z.infer<typeof forecastParamsSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type SessionIdParam = z.infer<typeof sessionIdParamSchema>;
 export type AnalyticsParams = z.infer<typeof analyticsParamsSchema>;
+export type CreateConceptsFromSourceInput = z.infer<typeof createConceptsFromSourceSchema>;
 
 // Generic API response helpers
 export function validateOrThrow<T>(schema: z.ZodType<T>, data: unknown): T {

@@ -4,6 +4,10 @@
  * Using simple type aliases with validation functions for practicality
  */
 
+import type { SourceKind, SourceLocation } from '../domain/ingestion/types.ts';
+
+export type { SourceKind, SourceLocation };
+
 export type UUID = string;
 export type Timestamp = string;
 export type Probability = number;
@@ -94,7 +98,12 @@ export interface Concept {
   explanation: string | null;
   difficulty: Difficulty;
   tags: string[];
+  /** Free-text origin, e.g. "Database Notes, p. 12". Set for concepts made from an uploaded source. */
   sourceReference: string | null;
+  /** Link back to the uploaded source/passage (null when typed by hand or the source was deleted). */
+  sourceId?: UUID | null;
+  sourceSectionId?: UUID | null;
+  sourceLocation?: SourceLocation | null;
   archivedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -308,6 +317,9 @@ export interface CreateConceptInput {
   difficulty: Difficulty;
   tags?: string[];
   sourceReference?: string | null;
+  sourceId?: UUID | null;
+  sourceSectionId?: UUID | null;
+  sourceLocation?: SourceLocation | null;
 }
 
 export interface UpdateConceptInput {
@@ -385,4 +397,65 @@ export interface Me {
   dailyGoal: number;
   targetRecall: number;
   isDemo: boolean;
+}
+
+// ---- Uploaded sources (docs/VISION_PLAN.md, phase 1) ----
+
+export type SourceStatus = 'processing' | 'ready' | 'failed';
+
+export interface Source {
+  id: UUID;
+  userId: UUID;
+  subject: string;
+  title: string;
+  kind: SourceKind;
+  storagePath: string;
+  byteSize: number;
+  sha256: string;
+  status: SourceStatus;
+  error: string | null;
+  /** Pages or slides; 1 for Word and text files. */
+  unitCount: number | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface SourceSection {
+  id: UUID;
+  sourceId: UUID;
+  ordinal: number;
+  level: number;
+  heading: string;
+  text: string;
+  location: SourceLocation;
+  charCount: number;
+}
+
+export interface SourceTerm {
+  id: UUID;
+  sourceId: UUID;
+  sectionId: UUID | null;
+  term: string;
+  definition: string | null;
+  location: SourceLocation;
+  score: number;
+}
+
+export interface SourceDetail {
+  source: Source;
+  sections: SourceSection[];
+  terms: SourceTerm[];
+  /** Terms that already have a concept made from them, so the UI can show "Added" after a reload. */
+  addedTermIds: UUID[];
+}
+
+export interface UploadSourceResult {
+  source: Source;
+  /** True when this exact file was uploaded before and the existing source was returned. */
+  duplicate: boolean;
+}
+
+export interface CreatedFromSource {
+  created: Concept[];
+  skipped: Array<{ termId?: UUID; sectionId?: UUID; reason: string }>;
 }

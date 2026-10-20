@@ -163,6 +163,24 @@ Groups review attempts into study sessions.
 
 **RLS**: Users can only CRUD own sessions
 
+### 6. sources, source_sections, source_terms (migration 007)
+
+Uploaded study material. All three have RLS (`auth.uid() = user_id`); inserts also require the parent source (and section) to be the user's. There is no UPDATE policy on sections/terms: they are written once by `ingest_source_tx`.
+
+| Table | Columns |
+|---|---|
+| `sources` | `id`, `user_id`, `subject`, `title`, `kind` (`pdf\|pptx\|docx\|text`), `storage_path`, `byte_size`, `sha256`, `status` (`processing\|ready\|failed`), `error`, `unit_count`, `created_at`, `updated_at`; **unique (`user_id`, `sha256`)** |
+| `source_sections` | `id`, `source_id` (cascade), `user_id`, `ordinal` (unique per source), `level`, `heading`, `text`, `location` JSONB, `char_count` |
+| `source_terms` | `id`, `source_id` (cascade), `section_id` (cascade), `user_id`, `term`, `definition` (nullable), `location` JSONB, `score` |
+
+`location` is `{page}`, `{slide}`, `{pageStart,pageEnd}`, `{slideStart,slideEnd}` or `{}` (Word/text have no pages).
+
+`concepts` gained nullable `source_id`, `source_section_id` (both `ON DELETE SET NULL`, so deleting a source keeps the concept) and `source_location` JSONB. The human-readable label ("DBMS Notes, p. 12") lives in the existing `source_reference` column. The `concepts` insert/update policies reject a `source_id` / `source_section_id` the user doesn't own.
+
+Files live in the private Storage bucket `sources` at `{user_id}/{source_id}.{ext}`; Storage policies allow a user only their own `{user_id}/` folder.
+
+`ingest_source_tx(p_source_id, p_unit_count, p_sections jsonb, p_terms jsonb)` (`SECURITY INVOKER`, `anon` revoked): inserts the sections and terms (terms reference their section by `section_ordinal`) and sets the source `ready` in one transaction; raises `Source not found` for another user's source and `Source already ingested` if sections exist.
+
 ## Key Relationships
 
 1. **profiles → concepts**: One-to-Many (user owns concepts)

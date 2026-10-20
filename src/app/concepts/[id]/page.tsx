@@ -248,6 +248,17 @@ export default function ConceptDetailPage() {
         )}
       </TerminalPanel>
 
+      {concept.sourceReference && (
+        <p className="font-mono text-xs text-ink-dim">
+          From:{' '}
+          {concept.sourceId ? (
+            <Link href={`/sources/${concept.sourceId}`} className="text-cyan underline-offset-2 hover:underline">{concept.sourceReference}</Link>
+          ) : (
+            concept.sourceReference
+          )}
+        </p>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <TerminalPanel title="ATTEMPTS.LOG" actions={<span className="font-mono text-[10px] tracking-[0.14em] text-strong">OBSERVED</span>} padded={false}>
           {attempts.length === 0 ? (

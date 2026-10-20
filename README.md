@@ -23,6 +23,7 @@ The 90-second judge walkthrough is in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.m
 - **Analytics v2**: immediate vs delayed accuracy, calibration (Brier + reliability bins), and a comparison with two simple baselines on the same attempts with no look-ahead. Every metric is `null` + `insufficientData` below 10 observations; nothing is invented.
 - **Security**: row-level security on every table; RPCs run as the caller (`SECURITY INVOKER`, `auth.uid()`, no user-id parameter, `anon` revoked); open-redirect-safe auth callback; session-refreshing middleware; service-role key used only server-side.
 - **Account**: settings, JSON export of every table, account deletion (the demo account is protected).
+- **Study material (phase 1 of [docs/VISION_PLAN.md](docs/VISION_PLAN.md))**: upload PDF, PPTX, DOCX or TXT/MD; the app extracts text with page/slide numbers, builds an outline, and picks out key terms and definition sentences with **rules, not an LLM**. One click turns a term (or a passage you phrase) into a concept that keeps its link to "DBMS Notes, p. 12". Scanned PDFs fail with a clear message (no OCR).
 - **UI**: landing page, dashboard ("Memory Weather"), keyboard-driven review workspace, library, concept detail (forecast curve, real scheduling factors, attempts, forecast log), analytics, history, model lab, settings.
 
 ## Honest limitations
@@ -30,7 +31,8 @@ The 90-second judge walkthrough is in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.m
 - The half-life update rule is a **heuristic**, not fitted to real learner data. Treat forecasts as unproven until Analytics shows they beat the baselines on **your** data. On the shipped demo seed the model does **not** beat the "your past accuracy" baseline; Analytics says so.
 - The scheduler plans around a fixed 80% target. The *target recall* setting is stored on the profile but is not yet wired into scheduling.
 - Rate limiting is in-memory (per instance). Use Redis/Upstash if you deploy more than one instance.
-- Not done: FSRS, offline mode, import.
+- Term and definition detection is pattern matching and will miss some and mis-detect a few; each term shows its source sentence so you can check it. Generated items are labelled as such. Cloze, multiple-choice and true/false generation are later phases.
+- Not done: FSRS, offline mode, OCR, YouTube.
 
 ## Architecture
 
@@ -62,7 +64,7 @@ Prerequisites: Node 22.6+, npm, a Supabase project.
 ```bash
 npm install
 cp .env.example .env.local        # fill in the Supabase values and DEMO_PASSWORD
-# apply supabase/migrations/001 ... 006 in order (SQL editor or `supabase db push`)
+# apply supabase/migrations/001 ... 007 in order (SQL editor or `supabase db push`)
 npm run db:seed                   # demo account + 15 concepts + replayed history
 npm run dev
 ```
@@ -107,7 +109,7 @@ Validation plan: (1) collect delayed outcomes, (2) measure calibration with Brie
 
 ## Database
 
-Tables: `profiles`, `concepts`, `recall_states`, `retrieval_attempts` (append-only), `study_sessions`, `forecast_log` (insert-only), `forecast_evaluations`. RLS everywhere. Migrations:
+Tables: `profiles`, `concepts`, `recall_states`, `retrieval_attempts` (append-only), `study_sessions`, `forecast_log` (insert-only), `forecast_evaluations`, `sources`, `source_sections`, `source_terms`, plus the private `sources` Storage bucket. RLS everywhere. Migrations:
 
 | File | Purpose |
 |---|---|
@@ -117,6 +119,7 @@ Tables: `profiles`, `concepts`, `recall_states`, `retrieval_attempts` (append-on
 | `004_forecast_log.sql` | immutable forecast log + evaluations |
 | `005_profile_settings.sql` | `daily_goal`, `target_recall`, `is_demo` (users can't set `is_demo`) |
 | `006_ownership_checks.sql` | INSERT policies require that the referenced concept is yours |
+| `007_sources.sql` | uploaded study material: `sources`, `source_sections`, `source_terms`, concept→source link, private `sources` bucket, `ingest_source_tx` |
 
 Migrations are additive and safe to re-run. Never edit `001`.
 

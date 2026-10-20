@@ -24,7 +24,7 @@ export function pillFromProbability(p: number | null | undefined, target = 0.8):
 }
 
 /** Colour is never the only signal: every status carries a text label and a distinct glyph. */
-export function StatusPill({ status, className }: { status: PillStatus; className?: string }) {
+export function StatusPill({ status, label, className }: { status: PillStatus; /** Overrides the default text, e.g. READY / FAILED for a source. */ label?: string; className?: string }) {
   const c = config[status];
   return (
     <span
@@ -35,7 +35,7 @@ export function StatusPill({ status, className }: { status: PillStatus; classNam
       )}
     >
       <span aria-hidden="true">{c.glyph}</span>
-      {c.label}
+      {label ?? c.label}
     </span>
   );
 }

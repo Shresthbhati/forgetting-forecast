@@ -15,6 +15,7 @@ import {
 } from '@/domain/analytics/calibration';
 import type {
   Review,
+  Concept,
   DashboardSummary,
   ConceptWithForecast,
   ReviewQueueItem,
@@ -85,7 +86,20 @@ export async function getReviewQueue(
 
   if (error) throw new Error(`Failed to get review queue: ${error.message}`);
 
+  // The RPC does not return source columns; one extra read lets the review card show "From: title, p. 12".
+  const ids = (data ?? []).map((row: any) => row.concept_id as string);
+  const sourceById = new Map<string, { source_reference: string | null; source_id: string | null; source_location: unknown }>();
+  if (ids.length > 0) {
+    const { data: sourceRows, error: sourceError } = await supabase
+      .from('concepts')
+      .select('id, source_reference, source_id, source_location')
+      .in('id', ids);
+    if (sourceError) throw new Error(`Failed to get concept sources: ${sourceError.message}`);
+    for (const r of sourceRows ?? []) sourceById.set(r.id, r);
+  }
+
   return (data ?? []).map((row: any) => {
+    const src = sourceById.get(row.concept_id);
     const now = new Date();
     const lastReview = row.last_reviewed_at ? new Date(row.last_reviewed_at) : new Date();
     const elapsed = row.last_reviewed_at
@@ -118,7 +132,9 @@ export async function getReviewQueue(
         explanation: row.explanation,
         difficulty: row.difficulty as 1 | 2 | 3 | 4 | 5,
         tags: [],
-        sourceReference: null,
+        sourceReference: src?.source_reference ?? null,
+        sourceId: src?.source_id ?? null,
+        sourceLocation: (src?.source_location ?? null) as Concept['sourceLocation'],
         archivedAt: null,
         createdAt: row.created_at as Timestamp,
         updatedAt: row.created_at as Timestamp,

@@ -64,6 +64,9 @@ const EXPORT_TABLES = [
   'study_sessions',
   'forecast_log',
   'forecast_evaluations',
+  'sources',
+  'source_sections',
+  'source_terms',
 ] as const;
 
 /** PostgREST returns at most 1000 rows per request, so each table is read in pages. */
@@ -86,11 +89,25 @@ export async function exportMyData(): Promise<Record<string, unknown>> {
   return { exportedAt: new Date().toISOString(), profile, ...tables };
 }
 
+/** Removes the user's uploaded files; rows cascade with the account, but Storage objects do not. */
+async function removeStoredFiles(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, userId: string) {
+  const bucket = supabase.storage.from('sources');
+  for (;;) {
+    const { data, error } = await bucket.list(userId, { limit: 100 });
+    if (error) throw new Error(`Failed to list stored files: ${error.message}`);
+    if (!data || data.length === 0) return;
+    const { error: removeError } = await bucket.remove(data.map(f => `${userId}/${f.name}`));
+    if (removeError) throw new Error(`Failed to delete stored files: ${removeError.message}`);
+  }
+}
+
 /** Deletes the auth user; foreign-key cascades remove every row the user owns. The demo account is protected. */
 export async function deleteMe(): Promise<void> {
-  const { user } = await requireUser();
+  const { supabase, user } = await requireUser();
   const me = await getMe();
   if (me.isDemo) throw new ForbiddenError('The demo account cannot be deleted');
+
+  await removeStoredFiles(supabase, user.id);
 
   const { error } = await createSupabaseAdminClient().auth.admin.deleteUser(user.id);
   if (error) throw new Error(`Failed to delete account: ${error.message}`);

@@ -99,6 +99,27 @@ One call for the concept page:
 ### `POST /api/sessions` · `PATCH /api/sessions/:id`
 `POST { mode }` → `201 { sessionId }`. `PATCH { status: "completed" | "abandoned" }` → the session; `conceptCount` and `summary { total, correct, averageConfidence }` are **computed server-side from that session's attempts**. `409` if already finished, `404` for another user's id. An abandoned session keeps its attempts.
 
+## Sources (uploaded study material)
+
+Node runtime. Writes are rate-limited (about 60/minute/user). See `docs/VISION_PLAN.md`.
+
+### `POST /api/sources` (multipart)
+Fields: `file` (PDF, PPTX, DOCX, TXT, MD; max 20 MB, 300 pages/slides), `subject` (1–100 chars), `title?`. The type is decided by extension **and** the file's leading bytes. `201` `{ source, duplicate: false }` when processed; `200` `{ source, duplicate: true }` when the same file (sha256) was uploaded before. A file that can't be read still returns `201` with `source.status = "failed"` and a readable `source.error` (e.g. `No text layer — OCR not supported yet`); re-uploading it retries. `400` for a missing/unsupported/mismatched file, blank subject or a file over the limit; `401` signed out.
+
+### `GET /api/sources`
+`200` `{ sources: [{ id, subject, title, kind, byteSize, status, error, unitCount, createdAt, ... }] }`, newest first.
+
+### `GET /api/sources/:id`
+`200` `{ source, sections: [{ id, ordinal, level, heading, text, location, charCount }], terms: [{ id, sectionId, term, definition, location, score }], addedTermIds }`. `terms[].definition` is `null` when the term was picked by frequency/heading only. `404` for an unknown or another user's id.
+
+### `DELETE /api/sources/:id`
+`204`. Removes the row, its sections and terms, and the stored file. Concepts already made from it are kept but lose their source link.
+
+### `POST /api/sources/:id/concepts`
+Body `{ items: [{ type: "term", termId } | { type: "passage", sectionId, prompt, answer }], difficulty?: 1-5 (default 3) }`, 1–100 items. `201` `{ created: Concept[], skipped: [{ termId?, sectionId?, reason }] }`. A term becomes `Define: <term>` → its definition sentence (or, with no detected definition, the first sentence that mentions it; skipped if there is none). Each concept stores `sourceId`, `sourceSectionId`, `sourceLocation` and `sourceReference` ("Title, p. 12"). Repeating a term is skipped with `reason: "Already added"`.
+
+`GET /api/review-queue` items and `GET /api/concepts/:id` carry `concept.sourceReference` / `sourceId` / `sourceLocation` for these concepts.
+
 ## Queue, forecasts, dashboard
 
 ### `GET /api/review-queue?mode=due|practice|experiment&subject=&maxItems=`

@@ -193,6 +193,74 @@ async function main() {
       check(`${table}: anon select returns nothing`, rows(r) === 0);
     }
 
+    // ---- uploaded sources (migration 007) ----
+    console.log('\nuploaded sources');
+    const srcId = randomUUID();
+    const srcPath = `${B.id}/${srcId}.txt`;
+    const srcRow = await B.client.from('sources').insert({
+      id: srcId, user_id: B.id, subject: 'RLS', title: 'secret notes', kind: 'text', storage_path: srcPath,
+      byte_size: 20, sha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+    });
+    if (srcRow.error) throw new Error(`B source insert failed: ${srcRow.error.message}`);
+    const ingest = await B.client.rpc('ingest_source_tx', {
+      p_source_id: srcId, p_unit_count: 1,
+      p_sections: [{ ordinal: 0, level: 1, heading: 'secret heading', text: 'secret body', location: {} }],
+      p_terms: [{ term: 'secret term', definition: 'secret definition', section_ordinal: 0, location: {}, score: 1 }],
+    });
+    if (ingest.error) throw new Error(`B ingest_source_tx failed: ${ingest.error.message}`);
+    const upload = await B.client.storage.from('sources').upload(srcPath, new Blob(['secret body']), { contentType: 'text/plain' });
+    if (upload.error) throw new Error(`B storage upload failed: ${upload.error.message}`);
+
+    for (const table of ['sources', 'source_sections', 'source_terms']) {
+      const byOwner = await A.client.from(table).select('*').eq('user_id', B.id);
+      check(`${table}: A cannot read B's rows`, !byOwner.error && rows(byOwner) === 0, byOwner.error?.message);
+      const all = await A.client.from(table).select('*');
+      check(`${table}: unfiltered select returns none of B's rows`, !all.error && rows(all) === 0, all.error?.message);
+    }
+    await A.client.from('sources').update({ title: 'hacked' }).eq('id', srcId);
+    const titleAfter = await admin.from('sources').select('title').eq('id', srcId).single();
+    check('sources: update of B\'s row has no effect', titleAfter.data?.title === 'secret notes');
+    await A.client.from('sources').delete().eq('id', srcId);
+    await A.client.from('source_sections').delete().eq('source_id', srcId);
+    await A.client.from('source_terms').delete().eq('source_id', srcId);
+    const srcStill = await admin.from('sources').select('id').eq('id', srcId);
+    const secStill = await admin.from('source_sections').select('id').eq('source_id', srcId);
+    const termStill = await admin.from('source_terms').select('id').eq('source_id', srcId);
+    check('sources: A cannot delete B\'s source', rows(srcStill) === 1);
+    check('source_sections: A cannot delete B\'s sections', rows(secStill) === 1);
+    check('source_terms: A cannot delete B\'s terms', rows(termStill) === 1);
+
+    const plantedSection = await A.client.from('source_sections').insert({
+      source_id: srcId, user_id: A.id, ordinal: 9, heading: 'x', text: 'y', char_count: 1,
+    });
+    check('source_sections: A cannot attach a section to B\'s source', plantedSection.error !== null);
+    const plantedTerm = await A.client.from('source_terms').insert({ source_id: srcId, user_id: A.id, term: 'x' });
+    check('source_terms: A cannot attach a term to B\'s source', plantedTerm.error !== null);
+    const plantedConcept = await A.client.from('concepts').insert({
+      user_id: A.id, subject: 'x', prompt: 'p', answer: 'a', difficulty: 1, source_id: srcId,
+    });
+    check('concepts: A cannot point a concept at B\'s source', plantedConcept.error !== null);
+    const crossIngest = await A.client.rpc('ingest_source_tx', { p_source_id: srcId, p_unit_count: 1, p_sections: [], p_terms: [] });
+    check('ingest_source_tx as A cannot write to B\'s source', crossIngest.error !== null);
+    const anonIngest = await anon.rpc('ingest_source_tx', { p_source_id: srcId, p_unit_count: 1, p_sections: [], p_terms: [] });
+    check('ingest_source_tx: anon cannot execute', anonIngest.error !== null);
+    const anonSources = await anon.from('sources').select('*');
+    check('sources: anon select returns nothing', rows(anonSources) === 0);
+
+    // stored files: the private bucket is scoped to {user_id}/ folders
+    const list = await A.client.storage.from('sources').list(B.id);
+    check('storage: A cannot list B\'s folder', !list.error && (list.data ?? []).length === 0, list.error?.message);
+    const download = await A.client.storage.from('sources').download(srcPath);
+    check('storage: A cannot download B\'s file', download.error !== null);
+    const plantedFile = await A.client.storage.from('sources').upload(`${B.id}/planted.txt`, new Blob(['x']));
+    check('storage: A cannot upload into B\'s folder', plantedFile.error !== null);
+    await A.client.storage.from('sources').remove([srcPath]);
+    const fileStill = await B.client.storage.from('sources').download(srcPath);
+    check('storage: A cannot delete B\'s file', fileStill.error === null);
+    const publicUrl = await fetch(`${url}/storage/v1/object/public/sources/${srcPath}`);
+    check('storage: the bucket is private (public URL does not serve the file)', !publicUrl.ok, `${publicUrl.status}`);
+    await B.client.storage.from('sources').remove([srcPath]);
+
     // ---- is_demo cannot be self-assigned ----
     console.log('\nprofile flags');
     await A.client.from('profiles').update({ is_demo: true }).eq('id', A.id);
