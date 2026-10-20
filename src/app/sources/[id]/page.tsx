@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Check, ListChecks, Plus, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, ListChecks, Plus, RotateCcw } from 'lucide-react';
 import { api, ApiRequestError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatLocation } from '@/domain/ingestion/location';
+import { youtubeLinkAt } from '@/domain/ingestion/youtube';
 import type { SourceDetail, SourceMastery, SourceSection, SourceTerm } from '@/types';
 import { MIN_MASTERY_ATTEMPTS } from '@/domain/assessment/mastery';
 import { Badge, Button, Dialog, EmptyState, Skeleton, StatusPill, TerminalPanel, Textarea, useToast } from '@/components/ui';
@@ -160,6 +161,7 @@ export default function SourceDetailPage() {
 
   const { source } = detail;
   const unit = source.kind === 'pptx' ? 'slide' : 'page';
+  const isVideo = source.kind === 'youtube' && source.sourceUrl !== null;
 
   return (
     <div className="space-y-6">
@@ -176,8 +178,19 @@ export default function SourceDetailPage() {
             {detail.sections.length} sections · {termsLabel(detail.terms.length)}
           </span>
         </div>
+        {isVideo && (
+          <a
+            href={source.sourceUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center gap-1 font-mono text-xs uppercase tracking-wider text-cyan hover:text-ink sm:min-h-0"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />Open on YouTube
+          </a>
+        )}
         <p className="font-mono text-[11px] text-ink-dim">
           Terms and definitions are picked out by rules, not by a model. Check them against the text before you rely on them.
+          {isVideo && ' This text comes from the video\'s captions; automatic captions have no punctuation and can mishear words, so sentences and definitions may be rougher than for documents.'}
         </p>
       </div>
 
@@ -235,6 +248,16 @@ export default function SourceDetailPage() {
                 <p className="font-mono text-[11px] uppercase tracking-wider text-ink-dim">{formatLocation(active.location) || 'Document'}</p>
                 <h2 className="break-words font-display text-xl font-bold text-ink">{active.heading}</h2>
               </header>
+              {isVideo && (
+                <a
+                  href={youtubeLinkAt(source.sourceUrl!, active.location)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-1 font-mono text-xs uppercase tracking-wider text-cyan hover:text-ink sm:min-h-0"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />Watch from {formatLocation(active.location).split('–')[0]}
+                </a>
+              )}
               <p className="whitespace-pre-line break-words text-sm leading-relaxed text-ink">{active.text}</p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" className="min-h-11 sm:min-h-0" onClick={() => openPassage(active)}>

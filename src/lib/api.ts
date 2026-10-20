@@ -16,7 +16,9 @@ import type {
   SourceMastery,
   Source,
   SourceDetail,
+  SourceGroup,
   UploadSourceResult,
+  YoutubeImportResult,
   ForecastLogEntry,
   Me,
   ReviewHistoryPage,
@@ -177,7 +179,7 @@ export const api = {
 
   // Uploaded study material
   sources: {
-    list: () => apiRequest<{ sources: Source[] }>('/api/sources'),
+    list: () => apiRequest<{ sources: Source[]; groups: SourceGroup[] }>('/api/sources'),
     get: (id: string) => apiRequest<SourceDetail>(`/api/sources/${id}`),
     delete: (id: string) => apiRequest<void>(`/api/sources/${id}`, { method: 'DELETE' }),
     quiz: (id: string, sectionId: string, seed?: number) =>
@@ -190,6 +192,8 @@ export const api = {
         difficulty?: number;
       }
     ) => apiRequest<CreatedFromSource>(`/api/sources/${id}/concepts`, { method: 'POST', body: JSON.stringify(input) }),
+    importYoutube: (url: string, subject: string) =>
+      apiRequest<YoutubeImportResult>('/api/sources/youtube', { method: 'POST', body: JSON.stringify({ url, subject }) }),
     /**
      * Multipart upload with progress (fetch cannot report upload progress). `onProgress` gets 0-1 while bytes are
      * sent; the promise resolves after the server has finished parsing.

@@ -119,6 +119,11 @@ export const uploadSourceFieldsSchema = z.object({
   title: z.string().trim().min(1).max(300).optional(),
 });
 
+export const importYoutubeSchema = z.object({
+  url: z.string().trim().min(1).max(500),
+  subject: z.string().trim().min(1).max(100),
+});
+
 /** Concepts made from a source: detected terms (definition recall) or a passage the user phrased themselves. */
 export const createConceptsFromSourceSchema = z.object({
   items: z

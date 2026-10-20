@@ -1,10 +1,10 @@
 /**
  * Uploaded study material
- * GET  /api/sources   list the signed-in user's sources
+ * GET  /api/sources   list the signed-in user's sources and playlist groups
  * POST /api/sources   multipart upload: file, subject, title? (PDF, PPTX, DOCX, TXT, MD; max 20 MB)
  */
 
-import { listUserSources, uploadSource } from '@/server/services/sources';
+import { listUserSourceGroups, listUserSources, uploadSource } from '@/server/services/sources';
 import { validateOrThrow, uploadSourceFieldsSchema } from '@/server/validation/schemas';
 import { createApiHandler, jsonResponse, UnauthorizedError, ValidationError } from '@/server/errors';
 import { getUserId } from '@/server/db/supabase';
@@ -16,7 +16,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export const GET = createApiHandler(async () => {
-  return jsonResponse({ sources: await listUserSources() });
+  const [sources, groups] = await Promise.all([listUserSources(), listUserSourceGroups()]);
+  return jsonResponse({ sources, groups });
 });
 
 export const POST = createApiHandler(async request => {

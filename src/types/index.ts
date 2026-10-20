@@ -430,8 +430,20 @@ export interface Source {
   error: string | null;
   /** Pages or slides; 1 for Word and text files. */
   unitCount: number | null;
+  /** Where the source came from (YouTube sources); null for uploaded files. */
+  sourceUrl: string | null;
+  /** The playlist this source was imported with, if any. */
+  groupId: UUID | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/** A playlist (or other collection) of sources imported together. */
+export interface SourceGroup {
+  id: UUID;
+  title: string;
+  url: string | null;
+  createdAt: Timestamp;
 }
 
 export interface SourceSection {
@@ -467,6 +479,21 @@ export interface UploadSourceResult {
   source: Source;
   /** True when this exact file was uploaded before and the existing source was returned. */
   duplicate: boolean;
+}
+
+export interface YoutubeImportItem {
+  videoId: string;
+  /** imported = new source, duplicate = already in your library, failed = see `error`. */
+  status: 'imported' | 'duplicate' | 'failed';
+  source: Source | null;
+  error: string | null;
+}
+
+export interface YoutubeImportResult {
+  group: SourceGroup | null;
+  items: YoutubeImportItem[];
+  /** The playlist had more videos than one import takes. */
+  truncated: boolean;
 }
 
 export interface CreatedFromSource {

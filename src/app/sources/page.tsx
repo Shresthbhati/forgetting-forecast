@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { FileText, Presentation, RotateCcw, Trash2, UploadCloud } from 'lucide-react';
+import { FileText, ListVideo, PlayCircle, Presentation, RotateCcw, Trash2, UploadCloud } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { ACCEPTED_EXTENSIONS, fileExtension } from '@/domain/ingestion/kind';
 import { MAX_UPLOAD_BYTES } from '@/domain/ingestion/types';
-import type { Source } from '@/types';
+import { parseYoutubeUrl } from '@/domain/ingestion/youtube';
+import type { Source, SourceGroup, YoutubeImportResult } from '@/types';
 import { Badge, Button, Dialog, EmptyState, Input, Skeleton, StatusPill, TerminalPanel, useToast, type PillStatus } from '@/components/ui';
 
 const SUBJECT_KEY = 'ff:last-source-subject';
@@ -27,12 +28,13 @@ const STATUS: Record<Source['status'], { pill: PillStatus; label: string }> = {
   failed: { pill: 'due', label: 'FAILED' },
 };
 
-function sizeLabel(bytes: number): string {
+function sizeLabel(bytes: number): string | null {
+  if (bytes <= 0) return null;
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function unitLabel(s: Source): string | null {
-  if (s.unitCount == null || s.kind === 'docx' || s.kind === 'text') return null;
+  if (s.unitCount == null || s.kind === 'docx' || s.kind === 'text' || s.kind === 'youtube') return null;
   const noun = s.kind === 'pptx' ? 'slide' : 'page';
   return `${s.unitCount} ${noun}${s.unitCount === 1 ? '' : 's'}`;
 }
@@ -40,6 +42,11 @@ function unitLabel(s: Source): string | null {
 export default function SourcesPage() {
   const toast = useToast();
   const [sources, setSources] = useState<Source[] | null>(null);
+  const [groups, setGroups] = useState<SourceGroup[]>([]);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoError, setVideoError] = useState('');
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [videoResult, setVideoResult] = useState<YoutubeImportResult | null>(null);
   const [error, setError] = useState('');
   const [subject, setSubject] = useState('');
   const [subjectError, setSubjectError] = useState('');
@@ -53,7 +60,9 @@ export default function SourcesPage() {
   const load = useCallback(async () => {
     setError('');
     try {
-      setSources((await api.sources.list()).sources);
+      const data = await api.sources.list();
+      setSources(data.sources);
+      setGroups(data.groups ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your sources');
     }
@@ -84,6 +93,40 @@ export default function SourcesPage() {
     for (const s of sources ?? []) map.set(s.subject, [...(map.get(s.subject) ?? []), s]);
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [sources]);
+
+  const groupTitle = useMemo(() => new Map(groups.map(g => [g.id, g.title])), [groups]);
+
+  async function importVideo(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = subject.trim();
+    if (!trimmed) {
+      setSubjectError('Enter a subject first so the material is organised');
+      return;
+    }
+    setSubjectError('');
+    if (!parseYoutubeUrl(videoUrl)) {
+      setVideoError('Paste a YouTube video or playlist link');
+      return;
+    }
+    setVideoError('');
+    setVideoResult(null);
+    setVideoBusy(true);
+    try {
+      localStorage.setItem(SUBJECT_KEY, trimmed);
+    } catch {
+      /* storage unavailable */
+    }
+    try {
+      const result = await api.sources.importYoutube(videoUrl.trim(), trimmed);
+      setVideoResult(result);
+      if (result.items.some(i => i.status === 'imported')) setVideoUrl('');
+      await load();
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : 'Could not import that link');
+    } finally {
+      setVideoBusy(false);
+    }
+  }
 
   const patchUpload = (key: number, patch: Partial<UploadItem>) =>
     setUploads(prev => prev.map(u => (u.key === key ? { ...u, ...patch } : u)));
@@ -247,6 +290,45 @@ export default function SourcesPage() {
         </div>
       </TerminalPanel>
 
+      <TerminalPanel title="YOUTUBE.EXE">
+        <form onSubmit={importVideo} className="space-y-3" noValidate>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <Input
+                label="Add a YouTube link"
+                value={videoUrl}
+                onChange={e => setVideoUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=… or a playlist link"
+                error={videoError}
+                inputMode="url"
+                autoComplete="off"
+                maxLength={500}
+              />
+            </div>
+            <Button type="submit" loading={videoBusy} className="min-h-11 sm:min-h-0">Import transcript</Button>
+          </div>
+          <p className="text-xs text-ink-dim">
+            Uses the video&apos;s captions only — nothing is downloaded or transcribed. Videos without captions can&apos;t be imported. Automatic captions have no punctuation, so definitions are found less reliably. Playlists import up to 25 videos as one group and can take a minute.
+          </p>
+          {videoBusy && <p role="status" className="font-mono text-xs uppercase tracking-wider text-ink-dim">Fetching transcripts…</p>}
+          {videoResult && (
+            <div role="status" className="space-y-1 rounded border border-line bg-night p-3 text-sm">
+              {videoResult.group && <p className="font-semibold text-ink">Playlist: {videoResult.group.title}</p>}
+              <ul className="space-y-1">
+                {videoResult.items.map(i => (
+                  <li key={i.videoId} className={cn('text-xs', i.status === 'failed' ? 'text-due' : 'text-ink-dim')}>
+                    <span className="font-mono">{i.source && i.source.status !== 'failed' ? i.source.title : i.videoId}</span>
+                    {' — '}
+                    {i.status === 'imported' ? 'imported' : i.status === 'duplicate' ? 'already in your library' : i.error ?? 'failed'}
+                  </li>
+                ))}
+              </ul>
+              {videoResult.truncated && <p className="text-xs text-ink-dim">Only the first 25 videos of the playlist were imported.</p>}
+            </div>
+          )}
+        </form>
+      </TerminalPanel>
+
       {error ? (
         <TerminalPanel title="SIGNAL_LOST.EXE">
           <div role="alert" className="space-y-3 py-4 text-center">
@@ -271,7 +353,7 @@ export default function SourcesPage() {
             <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2">
               {items.map(s => {
                 const st = STATUS[s.status];
-                const Icon = s.kind === 'pptx' ? Presentation : FileText;
+                const Icon = s.kind === 'pptx' ? Presentation : s.kind === 'youtube' ? PlayCircle : FileText;
                 const units = unitLabel(s);
                 return (
                   <li key={s.id} className="group relative min-w-0 rounded-lg border border-line bg-panel/85 p-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.05)] transition-[border-color] hover:border-magenta/60">
@@ -288,6 +370,9 @@ export default function SourcesPage() {
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                           <StatusPill status={st.pill} label={st.label} />
                           <Badge size="sm">{s.kind === 'text' ? 'txt/md' : s.kind}</Badge>
+                          {s.groupId && groupTitle.has(s.groupId) && (
+                            <Badge size="sm"><ListVideo className="mr-1 inline h-3 w-3" aria-hidden="true" /><span className="max-w-[10rem] truncate align-bottom">{groupTitle.get(s.groupId)}</span></Badge>
+                          )}
                           <span className="font-mono text-[11px] text-ink-dim">{[units, sizeLabel(s.byteSize)].filter(Boolean).join(' · ')}</span>
                         </div>
                         {s.status === 'failed' && s.error && <p role="alert" className="text-xs text-due">{s.error}</p>}
@@ -313,7 +398,7 @@ export default function SourcesPage() {
         open={deleting !== null}
         onClose={() => !deleteBusy && setDeleting(null)}
         title="CONFIRM_DELETE.EXE"
-        description="This deletes the uploaded file, its outline and its detected terms. Concepts you already made from it are kept, but lose their link to the source."
+        description="This deletes the uploaded file (or imported transcript), its outline and its detected terms. Concepts you already made from it are kept, but lose their link to the source."
         actions={
           <>
             <Button variant="ghost" onClick={() => setDeleting(null)} disabled={deleteBusy}>Cancel</Button>

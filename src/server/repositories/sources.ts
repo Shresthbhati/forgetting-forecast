@@ -5,7 +5,7 @@
 
 import { createSupabaseServerClient } from '@/server/db/supabase';
 import type { SourceKind, SourceLocation } from '@/domain/ingestion/types';
-import type { Source, SourceSection, SourceStatus, SourceTerm, Timestamp, UUID } from '@/types';
+import type { Source, SourceGroup, SourceSection, SourceStatus, SourceTerm, Timestamp, UUID } from '@/types';
 
 export const SOURCES_BUCKET = 'sources';
 /** Postgres unique_violation, raised when the same file (user_id, sha256) is inserted twice. */
@@ -23,8 +23,17 @@ interface SourceRow {
   status: SourceStatus;
   error: string | null;
   unit_count: number | null;
+  source_url: string | null;
+  group_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface GroupRow {
+  id: string;
+  title: string;
+  url: string | null;
+  created_at: string;
 }
 
 interface SectionRow {
@@ -61,6 +70,8 @@ function mapSource(row: SourceRow): Source {
     status: row.status,
     error: row.error,
     unitCount: row.unit_count,
+    sourceUrl: row.source_url,
+    groupId: row.group_id as UUID | null,
     createdAt: row.created_at as Timestamp,
     updatedAt: row.updated_at as Timestamp,
   };
@@ -109,6 +120,27 @@ export async function listSources(): Promise<Source[]> {
   return (data ?? []).map(mapSource);
 }
 
+const mapGroup = (row: GroupRow): SourceGroup => ({
+  id: row.id as UUID,
+  title: row.title,
+  url: row.url,
+  createdAt: row.created_at as Timestamp,
+});
+
+export async function listSourceGroups(): Promise<SourceGroup[]> {
+  const { supabase, userId } = await client();
+  const { data, error } = await supabase.from('source_groups').select().eq('user_id', userId).order('created_at', { ascending: false });
+  if (error) throw new Error(`Failed to list source groups: ${error.message}`);
+  return (data ?? []).map(mapGroup);
+}
+
+export async function insertSourceGroup(title: string, url: string | null): Promise<SourceGroup> {
+  const { supabase, userId } = await client();
+  const { data, error } = await supabase.from('source_groups').insert({ user_id: userId, title, url }).select().single();
+  if (error) throw new Error(`Failed to create source group: ${error.message}`);
+  return mapGroup(data);
+}
+
 export async function getSource(id: UUID): Promise<Source | null> {
   const { supabase, userId } = await client();
   const { data, error } = await supabase.from('sources').select().eq('id', id).eq('user_id', userId).maybeSingle();
@@ -131,6 +163,8 @@ export interface InsertSourceInput {
   storagePath: string;
   byteSize: number;
   sha256: string;
+  sourceUrl?: string | null;
+  groupId?: UUID | null;
 }
 
 /** Inserts the row in `processing` state. Returns null when the same file already exists (unique on user + sha256). */
@@ -147,6 +181,8 @@ export async function insertSource(input: InsertSourceInput): Promise<Source | n
       storage_path: input.storagePath,
       byte_size: input.byteSize,
       sha256: input.sha256,
+      source_url: input.sourceUrl ?? null,
+      group_id: input.groupId ?? null,
       status: 'processing',
     })
     .select()
@@ -156,6 +192,12 @@ export async function insertSource(input: InsertSourceInput): Promise<Source | n
     throw new Error(`Failed to create source: ${error.message}`);
   }
   return mapSource(data);
+}
+
+export async function renameSource(id: UUID, title: string): Promise<void> {
+  const { supabase, userId } = await client();
+  const { error } = await supabase.from('sources').update({ title }).eq('id', id).eq('user_id', userId);
+  if (error) throw new Error(`Failed to rename source: ${error.message}`);
 }
 
 export async function markSourceFailed(id: UUID, message: string): Promise<Source> {
