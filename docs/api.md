@@ -118,6 +118,14 @@ Fields: `file` (PDF, PPTX, DOCX, TXT, MD; max 20 MB, 300 pages/slides), `subject
 ### `POST /api/sources/:id/concepts`
 Body `{ items: [{ type: "term", termId } | { type: "passage", sectionId, prompt, answer }], difficulty?: 1-5 (default 3) }`, 1–100 items. `201` `{ created: Concept[], skipped: [{ termId?, sectionId?, reason }] }`. A term becomes `Define: <term>` → its definition sentence (or, with no detected definition, the first sentence that mentions it; skipped if there is none). Each concept stores `sourceId`, `sourceSectionId`, `sourceLocation` and `sourceReference` ("Title, p. 12"). Repeating a term is skipped with `reason: "Already added"`.
 
+### `GET /api/sources/:id/quiz?sectionId=<uuid>&seed=<int>`
+`200` `{ section: { id, heading, location }, questions, seed, termsInSection, termsWithoutConcept, unaddedTermIds }`. Up to 10 rule-generated questions for one section, each `{ id, type: "definition"|"cloze"|"mcq"|"truefalse"|"numerical", grading: "exact"|"short"|"numeric", prompt, options?, answer, acceptable, gradeText?, numeric?, explanation, conceptId, sectionId, location, label: "Generated from p. N", practiceOnly }`. Only terms that already have a concept are asked about (`conceptId` set); numericals come from formulas in the text and have `practiceOnly: true`, `conceptId: null`. The same `seed` gives the same quiz. `400` without a valid `sectionId`, `404` for an unknown source or section.
+
+Record an answer with the normal `POST /api/reviews` (`reviewMode: "practice"`) and put `{ source: "quiz", generated: true, questionType, questionId, grading, autoVerdict, overridden }` in `metadata`.
+
+### `GET /api/sources/:id/mastery`
+`200` `{ topics: [{ topic, concepts, attempts, correct, mastery, insufficientData }] }`, weakest first. `topic` is the section heading the concepts were made from. `mastery` (0–1, recency-weighted) is `null` with `insufficientData: true` below 5 attempts. `404` for an unknown source.
+
 `GET /api/review-queue` items and `GET /api/concepts/:id` carry `concept.sourceReference` / `sourceId` / `sourceLocation` for these concepts.
 
 ## Queue, forecasts, dashboard

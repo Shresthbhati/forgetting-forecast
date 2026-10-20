@@ -7,6 +7,8 @@
 import type {
   ConceptDetail,
   CreatedFromSource,
+  QuizResponse,
+  SourceMastery,
   Source,
   SourceDetail,
   UploadSourceResult,
@@ -172,6 +174,9 @@ export const api = {
     list: () => apiRequest<{ sources: Source[] }>('/api/sources'),
     get: (id: string) => apiRequest<SourceDetail>(`/api/sources/${id}`),
     delete: (id: string) => apiRequest<void>(`/api/sources/${id}`, { method: 'DELETE' }),
+    quiz: (id: string, sectionId: string, seed?: number) =>
+      apiRequest<QuizResponse>(`/api/sources/${id}/quiz?sectionId=${sectionId}${seed === undefined ? '' : `&seed=${seed}`}`),
+    mastery: (id: string) => apiRequest<SourceMastery>(`/api/sources/${id}/mastery`),
     createConcepts: (
       id: string,
       input: {

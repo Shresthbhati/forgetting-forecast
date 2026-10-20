@@ -278,3 +278,66 @@ export async function listConceptPromptsForSource(sourceId: UUID): Promise<Set<s
   if (error) throw new Error(`Failed to list source concepts: ${error.message}`);
   return new Set((data ?? []).map(r => (r.prompt as string).trim().toLowerCase()));
 }
+
+export interface SourceConceptRow {
+  id: UUID;
+  prompt: string;
+  topic: string | null;
+  sourceSectionId: UUID | null;
+}
+
+/** Concepts made from this source (active ones), with the prompt used to match them back to their term. */
+export async function listSourceConcepts(sourceId: UUID): Promise<SourceConceptRow[]> {
+  const { supabase, userId } = await client();
+  const { data, error } = await supabase
+    .from('concepts')
+    .select('id, prompt, topic, source_section_id')
+    .eq('user_id', userId)
+    .eq('source_id', sourceId)
+    .is('archived_at', null);
+  if (error) throw new Error(`Failed to list source concepts: ${error.message}`);
+  return (data ?? []).map(r => ({ id: r.id as UUID, prompt: r.prompt as string, topic: r.topic as string | null, sourceSectionId: r.source_section_id as UUID | null }));
+}
+
+/** Defined terms across the user's ready sources in a subject: the pool wrong multiple-choice options come from. */
+export async function listSubjectDefinedTerms(subject: string, limit = 400): Promise<Array<{ term: string; definition: string }>> {
+  const { supabase, userId } = await client();
+  const { data: sourceRows, error } = await supabase
+    .from('sources')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('subject', subject)
+    .eq('status', 'ready');
+  if (error) throw new Error(`Failed to list subject sources: ${error.message}`);
+  const ids = (sourceRows ?? []).map(r => r.id);
+  if (ids.length === 0) return [];
+  const { data, error: termError } = await supabase
+    .from('source_terms')
+    .select('term, definition')
+    .eq('user_id', userId)
+    .in('source_id', ids)
+    .not('definition', 'is', null)
+    .order('score', { ascending: false })
+    .limit(limit);
+  if (termError) throw new Error(`Failed to list subject terms: ${termError.message}`);
+  return (data ?? []).map(r => ({ term: r.term as string, definition: r.definition as string }));
+}
+
+export interface AttemptRow {
+  conceptId: UUID;
+  correct: boolean;
+  answeredAt: string;
+}
+
+// ponytail: PostgREST returns at most 1000 rows; page this read if one source's history grows past that.
+export async function listAttemptsForConcepts(conceptIds: UUID[]): Promise<AttemptRow[]> {
+  if (conceptIds.length === 0) return [];
+  const { supabase, userId } = await client();
+  const { data, error } = await supabase
+    .from('retrieval_attempts')
+    .select('concept_id, actual_correctness, answered_at')
+    .eq('user_id', userId)
+    .in('concept_id', conceptIds);
+  if (error) throw new Error(`Failed to list attempts: ${error.message}`);
+  return (data ?? []).map(r => ({ conceptId: r.concept_id as UUID, correct: r.actual_correctness as boolean, answeredAt: r.answered_at as string }));
+}

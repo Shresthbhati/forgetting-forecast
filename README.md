@@ -24,6 +24,7 @@ The 90-second judge walkthrough is in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.m
 - **Security**: row-level security on every table; RPCs run as the caller (`SECURITY INVOKER`, `auth.uid()`, no user-id parameter, `anon` revoked); open-redirect-safe auth callback; session-refreshing middleware; service-role key used only server-side.
 - **Account**: settings, JSON export of every table, account deletion (the demo account is protected).
 - **Study material (phase 1 of [docs/VISION_PLAN.md](docs/VISION_PLAN.md))**: upload PDF, PPTX, DOCX or TXT/MD; the app extracts text with page/slide numbers, builds an outline, and picks out key terms and definition sentences with **rules, not an LLM**. One click turns a term (or a passage you phrase) into a concept that keeps its link to "DBMS Notes, p. 12". Scanned PDFs fail with a clear message (no OCR).
+- **Section quizzes (phase 2)**: rule-generated definition recall, cloze, term→definition multiple choice, true/false and numericals from formulas in the text. Multiple choice is graded exactly; short answers by word overlap + edit distance, and **every automatic grade shows an override step before it is saved**. Answers are recorded as normal attempts with the question type in their metadata; per-topic mastery is computed from them (null below 5 answers). Everything is labelled "Generated from p. N".
 - **UI**: landing page, dashboard ("Memory Weather"), keyboard-driven review workspace, library, concept detail (forecast curve, real scheduling factors, attempts, forecast log), analytics, history, model lab, settings.
 
 ## Honest limitations
@@ -31,7 +32,7 @@ The 90-second judge walkthrough is in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.m
 - The half-life update rule is a **heuristic**, not fitted to real learner data. Treat forecasts as unproven until Analytics shows they beat the baselines on **your** data. On the shipped demo seed the model does **not** beat the "your past accuracy" baseline; Analytics says so.
 - The scheduler plans around a fixed 80% target. The *target recall* setting is stored on the profile but is not yet wired into scheduling.
 - Rate limiting is in-memory (per instance). Use Redis/Upstash if you deploy more than one instance.
-- Term and definition detection is pattern matching and will miss some and mis-detect a few; each term shows its source sentence so you can check it. Generated items are labelled as such. Cloze, multiple-choice and true/false generation are later phases.
+- Term and definition detection is pattern matching and will miss some and mis-detect a few; each term shows its source sentence so you can check it. Generated items are labelled as such. Auto-grading of short answers is a heuristic (hence the override step); numericals are practice-only; rules can't write "explain why" questions.
 - Not done: FSRS, offline mode, OCR, YouTube.
 
 ## Architecture

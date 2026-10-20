@@ -138,6 +138,11 @@ export const createConceptsFromSourceSchema = z.object({
   difficulty: z.number().int().min(1).max(5).default(3),
 });
 
+export const quizParamsSchema = z.object({
+  sectionId: uuidSchema,
+  seed: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+});
+
 // Type inference helpers
 export type PaginationParams = z.infer<typeof paginationSchema>;
 export type CreateConceptInput = z.infer<typeof createConceptSchema>;

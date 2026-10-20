@@ -31,7 +31,7 @@ The new direction changes the starting point: users **upload what they study**. 
 | # | Phase | Status |
 |---|---|---|
 | 1 | Foundation: uploads, extraction, outline, key terms, concepts linked to their page/slide | **built** (see below) |
-| 2 | Assessment engine (our own) | not started |
+| 2 | Assessment engine (our own) | **built** (see below) |
 | 3 | Memory engine upgrades | not started |
 | 4 | Mixed tests across subjects | not started |
 | 5 | Knowledge graph and exam mode | not started |
@@ -45,7 +45,7 @@ The new direction changes the starting point: users **upload what they study**. 
 - Organise everything by subject.
 - "Make a concept from this passage", linking back to the page or slide.
 
-### 2. Assessment engine (our own)
+### 2. Assessment engine (our own) (built)
 
 - Rule-based generators:
   - definition recall
@@ -125,9 +125,41 @@ Account export now includes the three new tables; account deletion also removes 
 
 `/sources` (drag-and-drop with progress, status pills, grouped by subject, empty/error states) and `/sources/[id]` (outline with page/slide numbers, reader, key terms with "Add as concept" / "Add all", "Make a concept from this passage"). A sidebar entry; "From: title, p. 12" on the concept page and the review card. Terms and definitions are labelled as picked out by rules.
 
+## Phase 2 in detail
+
+No schema change: quiz answers are ordinary attempts written through the existing `POST /api/reviews` (`submit_review_tx`), with the question type and grading method in `retrieval_attempts.metadata`.
+
+### Domain (`src/domain/assessment/`, pure, unit-tested)
+
+- `generators.ts`: a `QuestionGenerator` interface (the seam for a local model later) and the built-in `ruleBasedGenerator`. One question per term, rotating through the types; if a type can't be made for a term the next is tried.
+  - **definition recall**: "Define: term", graded against the definition body.
+  - **cloze**: blanks the term (with its parenthesised acronym) or its longest key word out of the defining sentence; the acronym and full form are accepted answers.
+  - **multiple choice**: term → definition. Wrong options are *other terms' definitions from the same subject, closest in length*; never one that names the answer, never a duplicate. Needs 3 other defined terms in the subject, otherwise the term gets another type.
+  - **true/false**: the sentence as written, or with the term swapped for another term's.
+  - **numerical**: `formula.ts` finds `F = m·a`, `v = u + at`, `E = mc^2` in the text and evaluates them with a small parser (no `eval`); random values, computed answer, 1% tolerance. Only results exact to two decimals are used.
+- `gates.ts`: quality gates: minimum stem length, no stems that are only pronouns/function words once the blank is removed, a minimum definition-body size, deduplication.
+- `grading.ts`: multiple choice and true/false are an exact match (final). Short answers: exact, else edit-distance similarity ≥ 0.85 (typos), else normalised word overlap of key words (all of them for a short expected answer, ≥ 60% for a long one). Numbers: within tolerance, units ignored.
+- `mastery.ts`: per-topic (section heading) mastery = recency-weighted share of correct attempts (21-day half-life); `null` and `insufficientData` below 5 attempts.
+
+### Server and UI
+
+- `GET /api/sources/[id]/quiz?sectionId=&seed=`: builds a quiz for one section (max 10 questions).
+- `GET /api/sources/[id]/mastery`: per-topic mastery for the concepts made from the source.
+- `/sources/[id]/quiz?section=`: the quiz. "Quiz this section" is in the reader; a Mastery tab is on the source page.
+- **Every short-answer and numeric grade shows "Graded automatically — override?"** with the automatic verdict preselected; the verdict you leave selected is what is saved as `actual_correctness`, and the metadata records `autoVerdict` and `overridden`.
+- Every question is labelled "Generated from p. N".
+
+### Deliberate limits
+
+- The quiz covers terms that **already have a concept**, so every answer is a real attempt feeding the forecasts. Terms without one are listed, with an "Add N terms and quiz me" button.
+- **Numericals are practice-only**: they come from a formula, not a concept, so they are not recorded.
+- Grading is a heuristic. It will mark some right answers wrong and a few wrong ones right, which is why the override step is always shown.
+- Question type is stored in attempt metadata but is **not** a model feature yet (phase 3).
+- Rules still can't write "explain why" or application questions.
+
 ## Known limits of phase 1
 
 - Definition detection is pattern matching: expect misses and a few false positives. Every term shows the exact sentence so the user can check it.
 - Terms with no detected definition are added with the first sentence that mentions them (or skipped if there is none); the explanation says so.
 - No OCR, so scanned PDFs fail clearly. Word and text files have no page numbers.
-- No cloze / multiple-choice / true-false yet: phase 1 produces definition-recall concepts and user-written passage concepts only.
+- Phase 1 alone produces only definition-recall concepts and user-written passage concepts; phase 2 adds the other question types as quizzes.

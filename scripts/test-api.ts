@@ -281,6 +281,34 @@ const queueWithSource = await call('GET', '/api/review-queue?mode=practice&maxIt
 check('the review queue carries the source reference for source concepts',
   queueWithSource.json.items.some((i: any) => i.concept.id === madeConcept.id && /api-test-notes/.test(i.concept.sourceReference ?? '')));
 
+// ---- section quiz + mastery (phase 2) ----
+console.log('\nquiz and mastery');
+const quizSection: string = normalization.sectionId;
+const quiz = await call('GET', `/api/sources/${sourceId}/quiz?sectionId=${quizSection}&seed=7`);
+check('GET /api/sources/:id/quiz -> generated questions with labels and concept ids',
+  quiz.status === 200 && quiz.json.questions.length >= 1 && quiz.json.questions.every((q: any) => /^Generated from/.test(q.label) && q.id && q.prompt && (q.practiceOnly || q.conceptId)),
+  JSON.stringify(quiz.json).slice(0, 300));
+check('the quiz only asks about terms that are concepts', quiz.json.questions.filter((q: any) => !q.practiceOnly).every((q: any) => q.conceptId === madeConcept.id) && quiz.json.termsWithoutConcept >= 0);
+const quizAgain = await call('GET', `/api/sources/${sourceId}/quiz?sectionId=${quizSection}&seed=7`);
+check('the same seed gives the same quiz', JSON.stringify(quizAgain.json.questions.map((q: any) => q.id)) === JSON.stringify(quiz.json.questions.map((q: any) => q.id)));
+check('GET quiz without a sectionId -> 400', (await call('GET', `/api/sources/${sourceId}/quiz`)).status === 400);
+check('GET quiz for an unknown section -> 404', (await call('GET', `/api/sources/${sourceId}/quiz?sectionId=${randomUUID()}`)).status === 404);
+check('GET quiz for an unknown source -> 404', (await call('GET', `/api/sources/${randomUUID()}/quiz?sectionId=${quizSection}`)).status === 404);
+const asked = quiz.json.questions.find((q: any) => !q.practiceOnly);
+if (asked) {
+  const quizReview = await call('POST', '/api/reviews', {
+    conceptId: asked.conceptId, clientRequestId: randomUUID(), actualCorrectness: true, responseLatencyMs: 4000, reviewMode: 'practice',
+    metadata: { source: 'quiz', generated: true, questionType: asked.type, questionId: asked.id, grading: 'exact', autoVerdict: true, overridden: false },
+  });
+  check('a quiz answer is recorded as an attempt with its question type in the metadata', quizReview.status === 201, JSON.stringify(quizReview.json).slice(0, 200));
+}
+const mastery = await call('GET', `/api/sources/${sourceId}/mastery`);
+check('GET /api/sources/:id/mastery -> per-topic rows; fewer than 5 answers gives null, not a made-up figure',
+  mastery.status === 200 && Array.isArray(mastery.json.topics) && mastery.json.topics.length >= 1 &&
+  mastery.json.topics.every((t: any) => t.attempts < 5 ? t.mastery === null && t.insufficientData === true : typeof t.mastery === 'number'),
+  JSON.stringify(mastery.json).slice(0, 300));
+check('GET /api/sources/:id/mastery for an unknown source -> 404', (await call('GET', `/api/sources/${randomUUID()}/mastery`)).status === 404);
+
 for (const c of [madeConcept, passage.json.created[0]]) if (c) await call('DELETE', `/api/concepts/${c.id}`);
 check('DELETE /api/sources/:id -> 204', (await call('DELETE', `/api/sources/${sourceId}`)).status === 204);
 check('deleted source -> 404', (await call('GET', `/api/sources/${sourceId}`)).status === 404);

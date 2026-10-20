@@ -1,6 +1,6 @@
 import type { ExtractedTerm, Section } from './types.ts';
 
-const STOPWORDS = new Set((
+export const STOPWORDS = new Set((
   'a about above after again against all also am an and any are as at be because been before being below between both but by ' +
   'can cannot could did do does doing down during each either else etc even ever every few for from further had has have having he her here hers ' +
   'herself him himself his how however i if in into is it its itself just least less let like many may me might more most much must my myself ' +
@@ -11,7 +11,7 @@ const STOPWORDS = new Set((
   'example examples following figure table chapter section page etc eg ie'
 ).split(/\s+/));
 
-const PRONOUN_STARTS = new Set([
+export const PRONOUN_STARTS = new Set([
   'it', 'this', 'that', 'these', 'those', 'they', 'there', 'he', 'she', 'we', 'you', 'i', 'which', 'what', 'who', 'here',
   'such', 'some', 'many', 'most', 'all', 'each', 'every', 'both', 'one', 'another', 'other', 'its', 'their', 'our', 'your',
 ]);
@@ -97,16 +97,30 @@ export function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Splits one definition sentence into the defined term and the rest ("body"):
+ * "Normalization is the process of organizing data." -> { term: "Normalization", body: "the process of organizing data." }.
+ * Returns null when the sentence is not a recognised definition.
+ */
+export function splitDefinition(sentence: string): { term: string; body: string } | null {
+  if (sentence.length < MIN_DEFINITION_SENTENCE || sentence.length > MAX_DEFINITION_SENTENCE || sentence.endsWith('?')) return null;
+  if (!/^[\p{Lu}\d]/u.test(sentence)) return null;
+  const strict = STRICT.exec(sentence);
+  const isAre = strict ? null : IS_ARE.exec(sentence);
+  const other = strict || isAre ? null : (COLON.exec(sentence) ?? DASH.exec(sentence));
+  const match = strict ?? isAre ?? other;
+  if (!match) return null;
+  const term = validTerm(match[1]);
+  if (!term) return null;
+  return { term, body: isAre ? isAre[3] : match[2] };
+}
+
 /** Finds `X is/are/refers to/is defined as/means …`, `X: …` and `X — …` definitions. Returns the term and the whole sentence. */
 export function findDefinitions(text: string): Array<{ term: string; sentence: string }> {
   const found: Array<{ term: string; sentence: string }> = [];
   for (const sentence of splitSentences(text)) {
-    if (sentence.length < MIN_DEFINITION_SENTENCE || sentence.length > MAX_DEFINITION_SENTENCE || sentence.endsWith('?')) continue;
-    if (!/^[\p{Lu}\d]/u.test(sentence)) continue;
-    const match = STRICT.exec(sentence) ?? IS_ARE.exec(sentence) ?? COLON.exec(sentence) ?? DASH.exec(sentence);
-    if (!match) continue;
-    const term = validTerm(match[1]);
-    if (term) found.push({ term, sentence });
+    const split = splitDefinition(sentence);
+    if (split) found.push({ term: split.term, sentence });
   }
   return found;
 }

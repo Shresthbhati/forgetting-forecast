@@ -26,6 +26,10 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | Source upload + extraction | ✅ | PDF / PPTX / DOCX / TXT / MD; page & slide numbers survive extraction (tested with generated files); scanned PDFs fail with "No text layer — OCR not supported yet" |
 | Outline, key terms, definitions | 🟡 | rule-based (no LLM): pattern matching, so misses and false positives are expected; each term shows its source sentence |
 | Sources API + atomic ingest | ✅ | `POST/GET /api/sources`, `GET/DELETE /api/sources/:id`, `POST /api/sources/:id/concepts`; `ingest_source_tx` writes sections + terms + status in one transaction |
+| Question generation (phase 2) | 🟡 | rule-based: definition, cloze, multiple choice, true/false, numerical; quality gates and deduplication; unit-tested, but wording quality on real notes is unproven |
+| Answer grading | 🟡 | exact for choice questions; word overlap + edit distance for short answers; tolerance for numbers. Always followed by an override step |
+| Section quiz + attempts | ✅ | `GET /api/sources/:id/quiz`; answers go through `submit_review_tx` with question type in metadata; numericals are practice-only |
+| Per-topic mastery | ✅ | `GET /api/sources/:id/mastery`; recency-weighted; `null` below 5 answers |
 | Source storage isolation | ✅ | private bucket, `{user_id}/` folders; export includes sources, deletion removes files |
 | Write rate limit | 🟡 | in-memory per instance (60/min/user/scope); move to Redis/Upstash for multi-instance |
 | Scheduler uses `target_recall` | ⬜ | stored on the profile; the engine plans around a fixed 80% |
@@ -39,7 +43,8 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 | `/auth/*` | ✅ | restyled; `callbackUrl` sanitised to same-site paths |
 | `/` dashboard | ✅ | next action, 4 tiles (`ESTIMATE` / `OBSERVED`), curve, queue with real "why", upcoming risk |
 | `/review` | ✅ | keyboard-first, pause stops the latency timer, idempotent retry, "NOT SAVED" path, session summary |
-| `/sources`, `/sources/[id]` | ✅ | upload with progress, status pills, outline + reader, terms with Add as concept / Add all; checked at 375px and desktop |
+| `/sources`, `/sources/[id]` | ✅ | upload with progress, status pills, outline + reader, terms with Add as concept / Add all, Mastery tab; checked at 375px and desktop |
+| `/sources/[id]/quiz` | ✅ | all question types, override step, save-retry, practice-only items, add-terms-and-quiz; checked at 375px and desktop |
 | `/library` | ✅ | search, subject filter, add/delete dialogs, recall rings |
 | `/concepts/[id]` | ✅ | forecast curve, real scheduler factors, attempts, forecast log, edit/delete |
 | `/analytics` | ✅ | every number shows n; baseline result reported even when the model loses |
@@ -55,7 +60,7 @@ Legend: ✅ works and was exercised · 🟡 works with a stated limit · ⬜ not
 
 - The half-life model is heuristic and unvalidated. On the shipped demo seed it **does not** beat the "your past accuracy" baseline; the Analytics page reports that.
 - Demo data is simulated; its calibration shows the pipeline works, not that the model predicts real people.
-- Not built: FSRS, offline mode, OCR, YouTube, cloze / multiple-choice / true-false generation (phases 2+ of `docs/VISION_PLAN.md`), e2e browser tests in CI, Lighthouse CI.
+- Not built: FSRS, offline mode, OCR, YouTube, phases 3–6 of `docs/VISION_PLAN.md` (memory-engine upgrades, mixed tests, knowledge graph, YouTube), e2e browser tests in CI, Lighthouse CI.
 
 ## Contrast (computed WCAG ratios on `night` / `panel` / `panel-hi`)
 
