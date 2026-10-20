@@ -390,6 +390,9 @@ function ReviewSession() {
         ) : (
           <div className="space-y-6">
             <h1 className="font-display text-xl font-bold leading-snug tracking-[0.02em] text-ink sm:text-2xl">{card.concept.prompt}</h1>
+            {card.concept.sourceReference && (
+              <p className="-mt-3 font-mono text-[11px] text-ink-dim">From: {card.concept.sourceReference}</p>
+            )}
 
             <div>
               <label htmlFor="answer" className="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.16em] text-ink-dim">

@@ -203,6 +203,88 @@ const del = await call('DELETE', `/api/concepts/${conceptId}`);
 check('DELETE /api/concepts/:id -> 204', del.status === 204);
 check('deleted concept -> 404', (await call('GET', `/api/concepts/${conceptId}`)).status === 404);
 
+// ---- uploaded sources ----
+console.log('\nsources');
+const sourceNotes = [
+  '# 1 Normalization',
+  'Normalization is the process of organizing the columns and tables of a database to minimize data redundancy.',
+  'Redundant data wastes storage and causes update anomalies, so a good schema removes it step by step.',
+  'Anomaly: an update, insertion or deletion problem caused by redundant data in a table of the database.',
+  '# 2 Functional dependency',
+  'A functional dependency is a constraint between two sets of attributes in a relation of the database.',
+  'Candidate key refers to a minimal set of attributes that uniquely identifies every tuple in the relation.',
+].join('\n');
+async function uploadNotes(text: string, name: string, subject = 'API test'): Promise<Res> {
+  const form = new FormData();
+  form.append('file', new File([text], name, { type: 'text/plain' }));
+  form.append('subject', subject);
+  const res = await fetch(`${BASE}/api/sources`, { method: 'POST', headers: { Cookie: cookieHeader }, body: form });
+  const json: any = await res.json().catch(() => null);
+  return { status: res.status, json, headers: res.headers };
+}
+const uniqueNotes = `${sourceNotes}\nUpload marker ${randomUUID()}`;
+const up = await uploadNotes(uniqueNotes, 'api-test-notes.md');
+check('POST /api/sources (multipart) -> 201 with a ready source',
+  up.status === 201 && up.json?.source?.status === 'ready' && up.json?.duplicate === false, JSON.stringify(up.json).slice(0, 200));
+const sourceId: string = up.json?.source?.id;
+check('POST /api/sources again with the same file -> 200 duplicate, same source', await (async () => {
+  const again = await uploadNotes(uniqueNotes, 'renamed.md');
+  return again.status === 200 && again.json?.duplicate === true && again.json?.source?.id === sourceId;
+})());
+check('POST /api/sources without a file -> 400', await (async () => {
+  const form = new FormData();
+  form.append('subject', 'x');
+  const r = await fetch(`${BASE}/api/sources`, { method: 'POST', headers: { Cookie: cookieHeader }, body: form });
+  return r.status === 400;
+})());
+check('POST /api/sources with an unsupported type -> 400', (await uploadNotes('x', 'malware.exe')).status === 400);
+check('POST /api/sources with a pdf name but text content -> 400', (await uploadNotes('not really a pdf', 'fake.pdf')).status === 400);
+check('POST /api/sources with a blank subject -> 400', (await uploadNotes(uniqueNotes + '!', 'b.md', '   ')).status === 400);
+check('POST /api/sources signed out -> 401', (await (async () => {
+  const form = new FormData();
+  form.append('file', new File(['x'], 'a.md'));
+  form.append('subject', 'x');
+  return fetch(`${BASE}/api/sources`, { method: 'POST', body: form });
+})()).status === 401);
+const noText = await uploadNotes('   \n', 'blank.md');
+check('a file with no readable text is stored as failed with a reason, not as a success',
+  noText.json?.source?.status === 'failed' && /No readable text/.test(noText.json?.source?.error ?? ''), JSON.stringify(noText.json).slice(0, 200));
+if (noText.json?.source?.id) await call('DELETE', `/api/sources/${noText.json.source.id}`);
+
+const srcList = await call('GET', '/api/sources');
+check('GET /api/sources lists the upload', srcList.status === 200 && srcList.json.sources.some((s: any) => s.id === sourceId));
+const srcDetail = await call('GET', `/api/sources/${sourceId}`);
+check('GET /api/sources/:id -> sections and terms with locations',
+  srcDetail.status === 200 && srcDetail.json.sections.length >= 1 && srcDetail.json.terms.length >= 2 && Array.isArray(srcDetail.json.addedTermIds), JSON.stringify(srcDetail.json).slice(0, 200));
+const defined = srcDetail.json.terms.filter((t: any) => t.definition);
+check('detected definitions include "Normalization"', defined.some((t: any) => t.term === 'Normalization'), defined.map((t: any) => t.term).join(','));
+check('GET /api/sources/:id for an unknown id -> 404', (await call('GET', `/api/sources/${randomUUID()}`)).status === 404);
+check('GET /api/sources/not-a-uuid -> 400', (await call('GET', '/api/sources/not-a-uuid')).status === 400);
+
+const normalization = defined.find((t: any) => t.term === 'Normalization');
+const made = await call('POST', `/api/sources/${sourceId}/concepts`, { items: [{ type: 'term', termId: normalization.id }, { type: 'term', termId: randomUUID() }] });
+check('POST /api/sources/:id/concepts -> creates the concept, skips the unknown term',
+  made.status === 201 && made.json.created.length === 1 && made.json.skipped.length === 1, JSON.stringify(made.json).slice(0, 300));
+const madeConcept = made.json.created[0];
+check('the concept keeps its source link and reference', madeConcept?.sourceId === sourceId && /api-test-notes/.test(madeConcept?.sourceReference ?? ''), JSON.stringify(madeConcept));
+const madeAgain = await call('POST', `/api/sources/${sourceId}/concepts`, { items: [{ type: 'term', termId: normalization.id }] });
+check('adding the same term twice creates no duplicate', madeAgain.status === 201 && madeAgain.json.created.length === 0 && madeAgain.json.skipped[0]?.reason === 'Already added');
+const afterAdd = await call('GET', `/api/sources/${sourceId}`);
+check('GET /api/sources/:id marks the term as added', afterAdd.json.addedTermIds.includes(normalization.id));
+const passage = await call('POST', `/api/sources/${sourceId}/concepts`, {
+  items: [{ type: 'passage', sectionId: srcDetail.json.sections[0].id, prompt: 'Why remove redundancy?', answer: 'It wastes storage and causes update anomalies.' }],
+});
+check('POST /api/sources/:id/concepts with a passage -> 201, linked to the section',
+  passage.status === 201 && passage.json.created[0]?.sourceSectionId === srcDetail.json.sections[0].id, JSON.stringify(passage.json).slice(0, 200));
+check('POST /api/sources/:id/concepts with no items -> 400', (await call('POST', `/api/sources/${sourceId}/concepts`, { items: [] })).status === 400);
+const queueWithSource = await call('GET', '/api/review-queue?mode=practice&maxItems=100');
+check('the review queue carries the source reference for source concepts',
+  queueWithSource.json.items.some((i: any) => i.concept.id === madeConcept.id && /api-test-notes/.test(i.concept.sourceReference ?? '')));
+
+for (const c of [madeConcept, passage.json.created[0]]) if (c) await call('DELETE', `/api/concepts/${c.id}`);
+check('DELETE /api/sources/:id -> 204', (await call('DELETE', `/api/sources/${sourceId}`)).status === 204);
+check('deleted source -> 404', (await call('GET', `/api/sources/${sourceId}`)).status === 404);
+
 // ---- export ----
 console.log('\nexport');
 const exportRes = await fetch(`${BASE}/api/me/export`, { headers: { Cookie: cookieHeader } });

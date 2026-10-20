@@ -10,6 +10,7 @@ import type {
   Timestamp,
   Difficulty,
   ReviewMode,
+  SourceLocation,
 } from '@/types';
 
 interface ConceptRow {
@@ -23,6 +24,9 @@ interface ConceptRow {
   difficulty: number;
   tags: string[];
   source_reference: string | null;
+  source_id?: string | null;
+  source_section_id?: string | null;
+  source_location?: SourceLocation | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -40,6 +44,9 @@ function mapConceptRow(row: ConceptRow): Concept {
     difficulty: row.difficulty as Difficulty,
     tags: row.tags,
     sourceReference: row.source_reference,
+    sourceId: (row.source_id ?? null) as UUID | null,
+    sourceSectionId: (row.source_section_id ?? null) as UUID | null,
+    sourceLocation: row.source_location ?? null,
     archivedAt: row.archived_at as Timestamp | null,
     createdAt: row.created_at as Timestamp,
     updatedAt: row.updated_at as Timestamp,
@@ -55,6 +62,9 @@ export interface CreateConceptInput {
   difficulty: Difficulty;
   tags?: string[];
   sourceReference?: string | null;
+  sourceId?: UUID | null;
+  sourceSectionId?: UUID | null;
+  sourceLocation?: SourceLocation | null;
 }
 
 export interface UpdateConceptInput {
@@ -94,6 +104,9 @@ export async function createConcept(input: CreateConceptInput): Promise<Concept>
       difficulty: input.difficulty,
       tags: input.tags ?? [],
       source_reference: input.sourceReference ?? null,
+      source_id: input.sourceId ?? null,
+      source_section_id: input.sourceSectionId ?? null,
+      source_location: input.sourceLocation ?? null,
       archived_at: null,
       created_at: now,
       updated_at: now,

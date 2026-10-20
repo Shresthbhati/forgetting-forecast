@@ -6,6 +6,7 @@ import {
   BarChart2,
   BookOpen,
   ChevronLeft,
+  FileText,
   FlaskConical,
   History,
   LayoutDashboard,
@@ -25,11 +26,12 @@ export interface NavItem {
   badge?: 'due';
 }
 
-/** Order: Dashboard, Review, Library, Analytics, History, Model Lab, Settings. */
+/** Order: Dashboard, Review, Library, Sources, Analytics, History, Model Lab, Settings. */
 export const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/review', label: 'Review', icon: Target, badge: 'due' },
   { href: '/library', label: 'Library', icon: BookOpen },
+  { href: '/sources', label: 'Sources', icon: FileText },
   { href: '/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/history', label: 'History', icon: History },
   { href: '/model', label: 'Model Lab', icon: FlaskConical },

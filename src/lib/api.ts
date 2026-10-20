@@ -6,6 +6,10 @@
 
 import type {
   ConceptDetail,
+  CreatedFromSource,
+  Source,
+  SourceDetail,
+  UploadSourceResult,
   ForecastLogEntry,
   Me,
   ReviewHistoryPage,
@@ -161,6 +165,40 @@ export const api = {
       return apiRequest<any>(`/api/forecasts/${conceptId}?${search}`);
     },
     log: (conceptId: string) => apiRequest<{ forecasts: ForecastLogEntry[] }>(`/api/forecasts/${conceptId}/log`),
+  },
+
+  // Uploaded study material
+  sources: {
+    list: () => apiRequest<{ sources: Source[] }>('/api/sources'),
+    get: (id: string) => apiRequest<SourceDetail>(`/api/sources/${id}`),
+    delete: (id: string) => apiRequest<void>(`/api/sources/${id}`, { method: 'DELETE' }),
+    createConcepts: (
+      id: string,
+      input: {
+        items: Array<{ type: 'term'; termId: string } | { type: 'passage'; sectionId: string; prompt: string; answer: string }>;
+        difficulty?: number;
+      }
+    ) => apiRequest<CreatedFromSource>(`/api/sources/${id}/concepts`, { method: 'POST', body: JSON.stringify(input) }),
+    /**
+     * Multipart upload with progress (fetch cannot report upload progress). `onProgress` gets 0-1 while bytes are
+     * sent; the promise resolves after the server has finished parsing.
+     */
+    upload: (file: File, subject: string, onProgress?: (fraction: number) => void) =>
+      new Promise<UploadSourceResult>((resolve, reject) => {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('subject', subject);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API_BASE}/api/sources`);
+        xhr.responseType = 'json';
+        xhr.upload.onprogress = e => e.lengthComputable && onProgress?.(e.loaded / e.total);
+        xhr.onerror = () => reject(new ApiRequestError('Network error while uploading', 0));
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response as UploadSourceResult);
+          else reject(new ApiRequestError(xhr.response?.error?.message ?? `HTTP ${xhr.status}`, xhr.status, xhr.response?.error?.code));
+        };
+        xhr.send(body);
+      }),
   },
 
   // Analytics
